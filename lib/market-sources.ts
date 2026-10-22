@@ -8,16 +8,29 @@
 
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36';
 
-/** Turkish number format: "7.324,07" → 7324.07, "$2.875,30" → 2875.3 */
-export function parseTurkishNumber(str: string): number {
-    if (!str) return 0;
-    const cleaned = str.replace('$', '').trim();
-    return parseFloat(cleaned.replace(/\./g, '').replace(',', '.')) || 0;
+/** Turkish number format: "7.324,07" → 7324.07, "$2.875,30" → 2875.3. Numbers pass through. */
+export function parseTurkishNumber(value: unknown): number {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    if (typeof value !== 'string' || !value) return 0;
+    const cleaned = value.replace(/[$€₺%\s]/g, '');
+    // With a comma, dots are thousand separators ("6.523,07"). Without one, "6.523" is still
+    // grouped thousands, while "49.63" is a plain decimal.
+    const normalized = cleaned.includes(',')
+        ? cleaned.replace(/\./g, '').replace(',', '.')
+        : /^-?\d{1,3}(\.\d{3})+$/.test(cleaned) ? cleaned.replace(/\./g, '') : cleaned;
+    return parseFloat(normalized) || 0;
 }
 
-export function parseChangePercent(str: string): number {
-    if (!str) return 0;
-    return parseFloat(str.replace('%', '').replace(',', '.')) || 0;
+export function parseChangePercent(value: unknown): number {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    if (typeof value !== 'string' || !value) return 0;
+    return parseFloat(value.replace(/[%\s]/g, '').replace(',', '.')) || 0;
+}
+
+/** First present field among Truncgil's naming variants (v2/v3 Turkish, v4 English). */
+function pick(item: Record<string, unknown>, keys: string[]): unknown {
+    for (const k of keys) if (item[k] !== undefined && item[k] !== null && item[k] !== '') return item[k];
+    return undefined;
 }
 
 export interface TruncgilItem {
@@ -38,14 +51,15 @@ export async function fetchTruncgilToday(): Promise<{ items: Record<string, Trun
         const items: Record<string, TruncgilItem> = {};
         for (const [key, raw] of Object.entries(data)) {
             if (!raw || typeof raw !== 'object') continue;
-            const item = raw as Record<string, string>;
+            const item = raw as Record<string, unknown>;
             items[key] = {
-                buying: parseTurkishNumber(item['Alış'] || item['Alis'] || '0'),
-                selling: parseTurkishNumber(item['Satış'] || item['Satis'] || '0'),
-                changePercent: parseChangePercent(item['Değişim'] || item['Degisim'] || '0'),
+                buying: parseTurkishNumber(pick(item, ['Alış', 'Alis', 'Buying', 'buying'])),
+                selling: parseTurkishNumber(pick(item, ['Satış', 'Satis', 'Selling', 'selling'])),
+                changePercent: parseChangePercent(pick(item, ['Değişim', 'Degisim', 'Change', 'change'])),
             };
         }
-        return { items, updateDate: typeof data['Update_Date'] === 'string' ? data['Update_Date'] : '' };
+        const updateDate = pick(data, ['Update_Date', 'Güncelleme Tarihi', 'update_date']);
+        return { items, updateDate: typeof updateDate === 'string' ? updateDate : '' };
     } catch (err) {
         console.error('Truncgil fetch error:', err);
         return null;

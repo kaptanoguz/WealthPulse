@@ -18,7 +18,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test lib/__tests__/*.test.ts",
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON lib/__tests__/*.test.ts",
     "electron:dev": "npm run build && electron . --dev",
     "electron:build": "npm run build && electron-builder",
     "dist:linux": "npm run build && electron-builder --linux deb AppImage",

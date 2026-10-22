@@ -66,9 +66,9 @@ export default function NewsPage() {
     }, []);
 
     useEffect(() => {
-        fetchNews();
+        const first = setTimeout(fetchNews, 0);
         const interval = setInterval(fetchNews, 600_000); // 10 min
-        return () => clearInterval(interval);
+        return () => { clearTimeout(first); clearInterval(interval); };
     }, [fetchNews]);
 
     const filtered = filter === 'all' ? news : news.filter(n => n.category === filter);

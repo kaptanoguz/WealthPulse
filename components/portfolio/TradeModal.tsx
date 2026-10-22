@@ -2,10 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-    Modal, Stack, SegmentedControl, Select, TextInput, NumberInput, Group, Button, Text, Paper, Alert,
+    Modal, Stack, SegmentedControl, Select, TextInput, NumberInput, Group, Button, Text, SimpleGrid, Alert,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconInfoCircle } from '@tabler/icons-react';
 import {
     AssetType, Currency, ASSET_TYPE_LABELS, ASSET_TYPES, GOLD_NAMES, FOREX_NAMES, holdingKey, quantityHeld,
 } from '@/lib/portfolio';
@@ -18,6 +17,8 @@ export interface TradePreset {
     symbol?: string;
     name?: string;
     currency?: Currency;
+    /** Suggested unit price in `currency`. */
+    price?: number;
 }
 
 interface GoldApiItem {
@@ -30,16 +31,20 @@ const DEFAULT_CURRENCY: Record<AssetType, Currency> = {
     stock: 'TRY', etf: 'USD', gold: 'TRY', forex: 'TRY', crypto: 'USD', fund: 'TRY',
 };
 
+const SYMBOL_PLACEHOLDER: Record<AssetType, string> = {
+    stock: 'THYAO', etf: 'SPY', gold: '', forex: '', crypto: 'BTC', fund: 'YAY',
+};
+
 const todayIso = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+const numberProps = { thousandSeparator: '.', decimalSeparator: ',', hideControls: true } as const;
+
 export default function TradeModal({ opened, onClose, preset }: { opened: boolean; onClose: () => void; preset?: TradePreset }) {
     return (
-        <Modal opened={opened} onClose={onClose} title="İşlem Ekle" size="lg" centered
-            styles={{ header: { background: 'var(--wp-bg-card)', borderBottom: '1px solid var(--wp-border)' }, body: { background: 'var(--wp-bg-card)' } }}
-        >
+        <Modal opened={opened} onClose={onClose} title={<Text fw={600}>Yeni işlem</Text>} size={560}>
             {/* Mounted only while open, so every opening starts from a clean form. */}
             {opened && <TradeForm preset={preset} onDone={onClose} />}
         </Modal>
@@ -47,11 +52,12 @@ export default function TradeModal({ opened, onClose, preset }: { opened: boolea
 }
 
 function TradeForm({ preset, onDone }: { preset?: TradePreset; onDone: () => void }) {
-    const { trades, fx } = usePortfolioState();
+    const { trades, fx, quotes } = usePortfolioState();
     const initialType = preset?.type ?? 'stock';
     const initialCurrency = preset?.currency
         ?? (initialType === 'gold' && preset?.symbol?.toLowerCase() === 'ons' ? 'USD' : DEFAULT_CURRENCY[initialType]);
     const rateFor = (c: Currency): number | string => (c === 'TRY' ? 1 : fx[c] > 0 ? Number(fx[c].toFixed(4)) : '');
+    const knownPrice = (t: AssetType, sym: string) => (sym ? quotes[holdingKey(t, sym)]?.price : undefined);
 
     const [side, setSide] = useState<'buy' | 'sell'>(preset?.side ?? 'buy');
     const [type, setType] = useState<AssetType>(initialType);
@@ -60,13 +66,14 @@ function TradeForm({ preset, onDone }: { preset?: TradePreset; onDone: () => voi
     const [currency, setCurrencyState] = useState<Currency>(initialCurrency);
     const [date, setDate] = useState(todayIso());
     const [quantity, setQuantity] = useState<number | string>('');
-    const [price, setPrice] = useState<number | string>('');
+    const [price, setPrice] = useState<number | string>(() => preset?.price ?? knownPrice(initialType, preset?.symbol ?? '') ?? '');
     const [fee, setFee] = useState<number | string>(0);
     const [fxRate, setFxRate] = useState<number | string>(() => rateFor(initialCurrency));
     // 22 ayar bilezik is usually bought by piece; quantity is tracked in grams.
     const [pieces, setPieces] = useState<number | string>('');
     const [gramsPerPiece, setGramsPerPiece] = useState<number | string>('');
     const [goldPrices, setGoldPrices] = useState<GoldApiItem[]>([]);
+    const [errors, setErrors] = useState<string[]>([]);
 
     const setCurrency = (c: Currency) => {
         setCurrencyState(c);
@@ -82,22 +89,19 @@ function TradeForm({ preset, onDone }: { preset?: TradePreset; onDone: () => voi
     }, [type, goldPrices.length]);
 
     const isBilezik = type === 'gold' && symbol.toLowerCase() === '22-ayar-bilezik';
-    const effectiveQty = isBilezik && Number(pieces) > 0 && Number(gramsPerPiece) > 0
-        ? Number(pieces) * Number(gramsPerPiece)
-        : Number(quantity);
-
-    const held = useMemo(
-        () => (symbol ? quantityHeld(trades, holdingKey(type, symbol)) : 0),
-        [trades, type, symbol],
-    );
-
+    const fromPieces = isBilezik && Number(pieces) > 0 && Number(gramsPerPiece) > 0;
+    const effectiveQty = fromPieces ? Number(pieces) * Number(gramsPerPiece) : Number(quantity) || 0;
+    const held = useMemo(() => (symbol ? quantityHeld(trades, holdingKey(type, symbol)) : 0), [trades, type, symbol]);
     const goldQuote = goldPrices.find(g => g.key === symbol.toLowerCase());
-    const total = effectiveQty * Number(price || 0);
+    const total = effectiveQty * (Number(price) || 0);
+    const totalTry = total * (currency === 'TRY' ? 1 : Number(fxRate) || 0) + (Number(fee) || 0) * (currency === 'TRY' ? 1 : Number(fxRate) || 0) * (side === 'buy' ? 1 : -1);
+    const ready = symbol.trim() && name.trim() && effectiveQty > 0 && Number(price) > 0 && (currency === 'TRY' || Number(fxRate) > 0);
 
     const pickType = (t: AssetType) => {
         setType(t);
         setSymbol('');
         setName('');
+        setPrice('');
         setCurrency(DEFAULT_CURRENCY[t]);
     };
 
@@ -116,10 +120,12 @@ function TradeForm({ preset, onDone }: { preset?: TradePreset; onDone: () => voi
         setSymbol(code);
         setName(FOREX_NAMES[code]);
         setCurrency('TRY');
+        const p = knownPrice('forex', code);
+        if (p) setPrice(Number(p.toFixed(4)));
     };
 
     const submit = () => {
-        const errors = portfolioActions.addTrade({
+        const result = portfolioActions.addTrade({
             date,
             side,
             type,
@@ -131,110 +137,105 @@ function TradeForm({ preset, onDone }: { preset?: TradePreset; onDone: () => voi
             fxRate: currency === 'TRY' ? 1 : Number(fxRate),
             fee: Number(fee) || 0,
         });
-        if (errors.length) {
-            notifications.show({ title: 'İşlem kaydedilmedi', message: errors.join(' '), color: 'red' });
+        if (result.length) {
+            setErrors(result);
             return;
         }
         notifications.show({
             title: side === 'buy' ? 'Alış kaydedildi' : 'Satış kaydedildi',
-            message: `${formatNumber(effectiveQty, 6)} ${name || symbol}`,
-            color: 'green',
+            message: `${formatNumber(effectiveQty, 8)} × ${name || symbol}`,
+            color: side === 'buy' ? 'teal' : 'red',
         });
         onDone();
     };
 
     return (
-        <Stack gap="sm" mt="sm">
+        <Stack gap="md">
             <SegmentedControl
                 fullWidth
+                size="sm"
                 value={side}
-                onChange={v => setSide(v as 'buy' | 'sell')}
+                onChange={v => { setSide(v as 'buy' | 'sell'); setErrors([]); }}
                 data={[{ value: 'buy', label: 'Alış' }, { value: 'sell', label: 'Satış' }]}
-                color={side === 'buy' ? 'teal' : 'red'}
             />
 
-            <Group grow>
+            <SimpleGrid cols={2} spacing="sm">
                 <Select
-                    label="Varlık türü"
+                    label="Varlık sınıfı"
                     data={ASSET_TYPES.map(t => ({ value: t, label: ASSET_TYPE_LABELS[t] }))}
                     value={type}
                     onChange={v => v && pickType(v as AssetType)}
                     allowDeselect={false}
                 />
-                <TextInput label="Tarih" type="date" value={date} max={todayIso()} onChange={e => setDate(e.currentTarget.value)} required />
-            </Group>
+                <TextInput label="İşlem tarihi" type="date" value={date} max={todayIso()} onChange={e => setDate(e.currentTarget.value)} />
+            </SimpleGrid>
 
             {type === 'gold' ? (
                 <Select
                     label="Altın türü"
-                    placeholder="Seçin…"
+                    placeholder="Seçin"
                     data={Object.entries(GOLD_NAMES).map(([value, label]) => ({ value, label }))}
                     value={symbol.toLowerCase() || null}
                     onChange={pickGold}
                     searchable
-                    required
+                    description={goldQuote ? `Kuyumcu alış ${formatCurrency(goldQuote.buying)} · satış ${formatCurrency(goldQuote.selling)}` : undefined}
                 />
             ) : type === 'forex' ? (
                 <Select
                     label="Döviz"
-                    placeholder="Seçin…"
-                    data={Object.entries(FOREX_NAMES).map(([value, label]) => ({ value, label: `${value} — ${label}` }))}
+                    placeholder="Seçin"
+                    data={Object.entries(FOREX_NAMES).map(([value, label]) => ({ value, label: `${value} · ${label}` }))}
                     value={symbol.toUpperCase() || null}
                     onChange={pickForex}
-                    required
                 />
             ) : (
-                <Group grow align="flex-start">
+                <SimpleGrid cols={2} spacing="sm">
                     <TextInput
                         label="Sembol"
-                        placeholder={type === 'crypto' ? 'BTC' : type === 'etf' ? 'SPY' : type === 'fund' ? 'YAY' : 'THYAO'}
-                        description={type === 'stock' || type === 'fund' ? 'TL ise Borsa İstanbul varsayılır' : undefined}
+                        placeholder={SYMBOL_PLACEHOLDER[type]}
+                        description={type === 'stock' || type === 'fund' ? 'TL ise Borsa İstanbul varsayılır' : type === 'crypto' ? 'BTC, ETH, SOL…' : ' '}
                         value={symbol}
-                        onChange={e => setSymbol(e.currentTarget.value.toUpperCase())}
-                        required
+                        onChange={e => setSymbol(e.currentTarget.value.toUpperCase().trim())}
                     />
-                    <TextInput label="Varlık adı" placeholder="Türk Hava Yolları" value={name} onChange={e => setName(e.currentTarget.value)} required />
-                </Group>
-            )}
-
-            {side === 'sell' && symbol && (
-                <Text size="xs" c={held > 0 ? 'dimmed' : 'red'}>
-                    Eldeki miktar: {formatNumber(held, 6)}
-                </Text>
+                    <TextInput label="Varlık adı" description=" " placeholder="Türk Hava Yolları" value={name} onChange={e => setName(e.currentTarget.value)} />
+                </SimpleGrid>
             )}
 
             {isBilezik ? (
-                <Group grow>
-                    <NumberInput label="Bilezik adedi" value={pieces} onChange={setPieces} min={0} decimalScale={0} />
-                    <NumberInput label="Tanesi kaç gram" value={gramsPerPiece} onChange={setGramsPerPiece} min={0} decimalScale={2} />
-                    <NumberInput label="veya toplam gram" value={quantity} onChange={setQuantity} min={0} decimalScale={3}
-                        disabled={Number(pieces) > 0 && Number(gramsPerPiece) > 0} />
-                </Group>
+                <SimpleGrid cols={3} spacing="sm">
+                    <NumberInput label="Adet" value={pieces} onChange={setPieces} min={0} decimalScale={0} {...numberProps} />
+                    <NumberInput label="Tanesi (gram)" value={gramsPerPiece} onChange={setGramsPerPiece} min={0} decimalScale={2} {...numberProps} />
+                    <NumberInput label="veya toplam gram" value={fromPieces ? effectiveQty : quantity} onChange={setQuantity} min={0} decimalScale={3}
+                        disabled={fromPieces} {...numberProps} />
+                </SimpleGrid>
             ) : (
-                <NumberInput
-                    label={type === 'gold' ? 'Miktar (adet / gram)' : 'Miktar'}
-                    value={quantity}
-                    onChange={setQuantity}
-                    min={0}
-                    decimalScale={type === 'crypto' ? 8 : 4}
-                    thousandSeparator="."
-                    decimalSeparator=","
-                    required
-                />
+                <SimpleGrid cols={2} spacing="sm">
+                    <NumberInput
+                        label={type === 'gold' ? 'Miktar (adet / gram)' : 'Miktar'}
+                        description={side === 'sell' && symbol ? `Eldeki: ${formatNumber(held, 8)}` : undefined}
+                        value={quantity}
+                        onChange={setQuantity}
+                        min={0}
+                        decimalScale={type === 'crypto' ? 8 : 4}
+                        {...numberProps}
+                    />
+                    <NumberInput
+                        label={`Birim fiyat (${currency})`}
+                        description={side === 'sell' && symbol ? ' ' : undefined}
+                        value={price}
+                        onChange={setPrice}
+                        min={0}
+                        decimalScale={type === 'crypto' || type === 'fund' ? 8 : 4}
+                        {...numberProps}
+                    />
+                </SimpleGrid>
             )}
 
-            <Group grow align="flex-start">
-                <NumberInput
-                    label={`Birim fiyat (${currency})`}
-                    description={goldQuote ? `Kuyumcu: alış ${formatCurrency(goldQuote.buying)} · satış ${formatCurrency(goldQuote.selling)}` : undefined}
-                    value={price}
-                    onChange={setPrice}
-                    min={0}
-                    decimalScale={type === 'crypto' ? 8 : 4}
-                    thousandSeparator="."
-                    decimalSeparator=","
-                    required
-                />
+            {isBilezik && (
+                <NumberInput label="Gram fiyatı (TRY)" value={price} onChange={setPrice} min={0} decimalScale={4} {...numberProps} />
+            )}
+
+            <SimpleGrid cols={currency !== 'TRY' || (type !== 'gold' && type !== 'forex') ? 3 : 1} spacing="sm">
                 {type !== 'gold' && type !== 'forex' && (
                     <Select
                         label="Para birimi"
@@ -244,46 +245,45 @@ function TradeForm({ preset, onDone }: { preset?: TradePreset; onDone: () => voi
                         allowDeselect={false}
                     />
                 )}
-            </Group>
-
-            <Group grow align="flex-start">
-                <NumberInput label={`Komisyon (${currency})`} value={fee} onChange={setFee} min={0} decimalScale={4} />
                 {currency !== 'TRY' && (
                     <NumberInput
-                        label={`İşlem günü kuru (₺ / ${currency})`}
-                        description="TL bazlı maliyet bu kurla hesaplanır"
+                        label={`Kur (₺/${currency})`}
                         value={fxRate}
                         onChange={setFxRate}
                         min={0}
                         decimalScale={4}
-                        required
+                        {...numberProps}
                     />
                 )}
-            </Group>
+                <NumberInput label={`Komisyon (${currency})`} value={fee} onChange={setFee} min={0} decimalScale={4} {...numberProps} />
+            </SimpleGrid>
 
-            {total > 0 && (
-                <Paper p="sm" radius="md" style={{ background: 'var(--wp-bg-secondary)' }}>
-                    <Group justify="space-between">
-                        <Text size="sm" c="dimmed">İşlem tutarı</Text>
-                        <Text fw={700}>
-                            {formatCurrency(total, currency)}
-                            {currency !== 'TRY' && Number(fxRate) > 0 && (
-                                <Text span c="dimmed" size="xs"> ≈ {formatCurrency(total * Number(fxRate))}</Text>
-                            )}
-                        </Text>
-                    </Group>
-                </Paper>
+            {currency !== 'TRY' && (
+                <Text size="xs" c="var(--wp-text-3)" mt={-8}>
+                    TL maliyet, işlem günündeki kurla hesaplanır; böylece kur kazancı da kâr/zarara yansır.
+                </Text>
             )}
-
             {type === 'fund' && (
-                <Alert variant="light" color="blue" icon={<IconInfoCircle size={16} />} p="xs">
-                    TEFAS fonlarının çoğu için canlı fiyat kaynağı yok; eklendikten sonra fiyatı tablodan elle güncelleyebilirsiniz.
-                </Alert>
+                <Text size="xs" c="var(--wp-text-3)" mt={-8}>
+                    TEFAS fonlarının çoğu için canlı fiyat kaynağı yok. Eklendikten sonra fiyatı portföy tablosundan güncelleyebilirsiniz.
+                </Text>
             )}
 
-            <Button onClick={submit} fullWidth mt="xs" color={side === 'buy' ? 'teal' : 'red'}>
-                {side === 'buy' ? 'Alışı Kaydet' : 'Satışı Kaydet'}
-            </Button>
+            {errors.length > 0 && <Alert color="red" variant="light" p="xs">{errors.join(' ')}</Alert>}
+
+            <Group justify="space-between" pt="sm" style={{ borderTop: '1px solid var(--wp-border)' }}>
+                <div>
+                    <div className="wp-label">{side === 'buy' ? 'Ödenen' : 'Alınan'} tutar</div>
+                    <Text fw={600} size="lg">{formatCurrency(Math.max(0, totalTry))}</Text>
+                    {currency !== 'TRY' && total > 0 && <Text size="xs" c="var(--wp-text-3)">{formatCurrency(total, currency)}</Text>}
+                </div>
+                <Group gap="xs">
+                    <Button variant="default" onClick={onDone}>Vazgeç</Button>
+                    <Button onClick={submit} disabled={!ready} color={side === 'sell' ? 'red' : undefined}>
+                        {side === 'buy' ? 'Alışı kaydet' : 'Satışı kaydet'}
+                    </Button>
+                </Group>
+            </Group>
         </Stack>
     );
 }
