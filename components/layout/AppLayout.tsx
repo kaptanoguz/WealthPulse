@@ -8,7 +8,6 @@ import {
     Text,
     UnstyledButton,
     Avatar,
-    Badge,
     Burger,
     Stack,
     Tooltip,
@@ -23,24 +22,26 @@ import {
     IconCpu,
     IconReport,
     IconSettings,
-    IconBell,
     IconSun,
     IconMoon,
     IconActivity,
     IconReceipt2,
     IconNews,
 } from '@tabler/icons-react';
+import { FEATURES, FeatureName } from '@/lib/features';
 
-const navItems = [
-    { label: 'Dashboard', icon: IconDashboard, path: '/dashboard' },
+const allNavItems: { label: string; icon: typeof IconDashboard; path: string; feature?: FeatureName }[] = [
+    { label: 'Özet', icon: IconDashboard, path: '/dashboard' },
     { label: 'Portföy', icon: IconBriefcase, path: '/portfolio' },
-    { label: 'Piyasalar', icon: IconChartLine, path: '/markets' },
-    { label: 'Gelir/Gider', icon: IconReceipt2, path: '/budget' },
-    { label: 'Haberler', icon: IconNews, path: '/news' },
     { label: 'Simülasyon', icon: IconCpu, path: '/simulator' },
-    { label: 'Raporlar', icon: IconReport, path: '/reports' },
+    { label: 'Piyasalar', icon: IconChartLine, path: '/markets' },
+    { label: 'Gelir/Gider', icon: IconReceipt2, path: '/budget', feature: 'budget' },
+    { label: 'Haberler', icon: IconNews, path: '/news', feature: 'news' },
+    { label: 'Raporlar', icon: IconReport, path: '/reports', feature: 'reports' },
     { label: 'Ayarlar', icon: IconSettings, path: '/settings' },
 ];
+
+const navItems = allNavItems.filter(item => !item.feature || FEATURES[item.feature]);
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
@@ -104,23 +105,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 color="gray"
                             >
                                 {colorScheme === 'dark' ? <IconSun size={20} /> : <IconMoon size={20} />}
-                            </ActionIcon>
-                        </Tooltip>
-
-                        <Tooltip label="Bildirimler">
-                            <ActionIcon variant="subtle" size="lg" color="gray" pos="relative">
-                                <IconBell size={20} />
-                                <Badge
-                                    size="xs"
-                                    variant="filled"
-                                    color="red"
-                                    pos="absolute"
-                                    top={4}
-                                    right={4}
-                                    style={{ padding: '0 4px', minWidth: 16, height: 16, fontSize: 10 }}
-                                >
-                                    3
-                                </Badge>
                             </ActionIcon>
                         </Tooltip>
 
