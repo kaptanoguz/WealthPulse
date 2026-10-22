@@ -147,3 +147,18 @@ export function ChartTooltip({
         </div>
     );
 }
+
+// --- Status pill ---------------------------------------------------------------
+
+/**
+ * Small dot-marked status label. Deliberately never green or red: those mean
+ * gain and loss everywhere else in the app.
+ */
+export function Pill({ tone = 'neutral', children, title }: { tone?: 'neutral' | 'accent' | 'warn'; children: ReactNode; title?: string }) {
+    return (
+        <span className={`wp-pill wp-pill-${tone}`} title={title}>
+            <span className="wp-pill-dot" />
+            {children}
+        </span>
+    );
+}

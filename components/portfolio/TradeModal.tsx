@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
     Modal, Stack, SegmentedControl, Select, TextInput, NumberInput, Group, Button, Text, SimpleGrid, Alert,
 } from '@mantine/core';
@@ -19,6 +19,7 @@ export interface TradePreset {
     currency?: Currency;
     /** Suggested unit price in `currency`. */
     price?: number;
+    quantity?: number;
 }
 
 interface GoldApiItem {
@@ -42,11 +43,36 @@ const todayIso = () => {
 
 const numberProps = { thousandSeparator: '.', decimalSeparator: ',', hideControls: true } as const;
 
-export default function TradeModal({ opened, onClose, preset }: { opened: boolean; onClose: () => void; preset?: TradePreset }) {
+// --- One trade form for the whole app; any page or the command palette opens it ---
+
+let modalState: { opened: boolean; preset?: TradePreset; key: number } = { opened: false, key: 0 };
+const modalListeners = new Set<() => void>();
+const CLOSED = modalState;
+
+function setModal(next: typeof modalState) {
+    modalState = next;
+    modalListeners.forEach(l => l());
+}
+
+export function openTrade(preset?: TradePreset) {
+    setModal({ opened: true, preset, key: modalState.key + 1 });
+}
+
+export function closeTrade() {
+    setModal({ ...modalState, opened: false });
+}
+
+/** Mounted once in the app shell. */
+export function TradeModalHost() {
+    const { opened, preset, key } = useSyncExternalStore(
+        l => { modalListeners.add(l); return () => { modalListeners.delete(l); }; },
+        () => modalState,
+        () => CLOSED,
+    );
     return (
-        <Modal opened={opened} onClose={onClose} title={<Text fw={600}>Yeni işlem</Text>} size={560}>
-            {/* Mounted only while open, so every opening starts from a clean form. */}
-            {opened && <TradeForm preset={preset} onDone={onClose} />}
+        <Modal opened={opened} onClose={closeTrade} title={<Text fw={600}>Yeni işlem</Text>} size={560}>
+            {/* Keyed per opening, so every opening starts from a clean form. */}
+            {opened && <TradeForm key={key} preset={preset} onDone={closeTrade} />}
         </Modal>
     );
 }
@@ -65,7 +91,7 @@ function TradeForm({ preset, onDone }: { preset?: TradePreset; onDone: () => voi
     const [name, setName] = useState(preset?.name ?? '');
     const [currency, setCurrencyState] = useState<Currency>(initialCurrency);
     const [date, setDate] = useState(todayIso());
-    const [quantity, setQuantity] = useState<number | string>('');
+    const [quantity, setQuantity] = useState<number | string>(preset?.quantity ?? '');
     const [price, setPrice] = useState<number | string>(() => preset?.price ?? knownPrice(initialType, preset?.symbol ?? '') ?? '');
     const [fee, setFee] = useState<number | string>(0);
     const [fxRate, setFxRate] = useState<number | string>(() => rateFor(initialCurrency));

@@ -2,13 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Text, Group, TextInput, SegmentedControl, Button, Skeleton, Stack, Tooltip, ActionIcon } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
 import { IconSearch, IconRefresh, IconPlus, IconArrowsSort, IconSortAscending, IconSortDescending } from '@tabler/icons-react';
 import { AssetType, Currency, holdingKey } from '@/lib/portfolio';
 import { usePortfolio } from '@/lib/portfolio-store';
 import { formatCurrency, formatPercent, formatSignedCurrency, formatTimestamp } from '@/lib/format';
-import { PageHeader, Panel, Signed, EmptyState } from '@/components/ui/primitives';
-import TradeModal, { TradePreset } from '@/components/portfolio/TradeModal';
+import { PageHeader, Panel, Signed, EmptyState, Pill } from '@/components/ui/primitives';
+import { openTrade, TradePreset } from '@/components/portfolio/TradeModal';
 
 interface MarketRow {
     symbol: string;
@@ -91,8 +90,6 @@ export default function MarketsPage() {
     const [search, setSearch] = useState('');
     const [segment, setSegment] = useState<Segment>('all');
     const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
-    const [tradeOpened, tradeModal] = useDisclosure(false);
-    const [preset, setPreset] = useState<TradePreset | undefined>();
 
     const held = useMemo(() => new Set(summary.holdings.map(h => h.key)), [summary.holdings]);
 
@@ -141,7 +138,6 @@ export default function MarketsPage() {
 
     const goldRows = segment === 'all' || segment === 'gold' ? gold.filter(g => match(g.name)) : [];
     const onSort = (k: SortKey) => setSort(s => (s?.key === k ? (s.dir === -1 ? { key: k, dir: 1 } : null) : { key: k, dir: -1 }));
-    const openTrade = (p: TradePreset) => { setPreset(p); tradeModal.open(); };
     const nothing = !loading && !failed && sections.size === 0 && goldRows.length === 0;
 
     return (
@@ -171,8 +167,8 @@ export default function MarketsPage() {
 
             {loading && rows.length === 0 && gold.length === 0 ? (
                 <Stack gap={16}>
-                    <Skeleton h={260} radius={8} />
-                    <Skeleton h={200} radius={8} />
+                    <Skeleton h={260} radius={12} />
+                    <Skeleton h={200} radius={12} />
                 </Stack>
             ) : failed ? (
                 <Panel>
@@ -212,7 +208,7 @@ export default function MarketsPage() {
                                                                 <Text size="sm" fw={600} lh={1.3}>{r.symbol}</Text>
                                                                 <Text size="xs" c="var(--wp-text-3)" lh={1.3} truncate maw={260}>{r.name}</Text>
                                                             </div>
-                                                            {inPortfolio && <Text size="xs" c="var(--wp-accent)" style={{ whiteSpace: 'nowrap' }}>Portföyde</Text>}
+                                                            {inPortfolio && <Pill tone="accent">Portföyde</Pill>}
                                                         </Group>
                                                     </td>
                                                     <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(r.price, cur)}</td>
@@ -255,7 +251,7 @@ export default function MarketsPage() {
                                                     <td>
                                                         <Group gap={8} wrap="nowrap">
                                                             <Text size="sm" fw={600}>{g.name}</Text>
-                                                            {held.has(holdingKey('gold', g.key)) && <Text size="xs" c="var(--wp-accent)">Portföyde</Text>}
+                                                            {held.has(holdingKey('gold', g.key)) && <Pill tone="accent">Portföyde</Pill>}
                                                         </Group>
                                                     </td>
                                                     <td className="num">{formatCurrency(g.buying, cur)}</td>
@@ -279,7 +275,6 @@ export default function MarketsPage() {
                 </Stack>
             )}
 
-            <TradeModal opened={tradeOpened} onClose={tradeModal.close} preset={preset} />
         </>
     );
 }

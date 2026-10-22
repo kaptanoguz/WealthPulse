@@ -14,6 +14,8 @@ import {
 import { FEATURES, FeatureName } from '@/lib/features';
 import { refreshPrices, usePriceAutoRefresh, usePriceStatus } from '@/lib/portfolio-store';
 import { formatTimestamp } from '@/lib/format';
+import CommandPalette, { CommandPaletteTrigger } from '@/components/layout/CommandPalette';
+import { TradeModalHost } from '@/components/portfolio/TradeModal';
 
 const allNavItems: { label: string; icon: typeof IconLayoutDashboard; path: string; feature?: FeatureName }[] = [
     { label: 'Özet', icon: IconLayoutDashboard, path: '/dashboard' },
@@ -93,8 +95,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             padding={0}
             styles={{
                 main: { background: 'var(--wp-bg)', minHeight: '100vh' },
-                header: { background: 'var(--wp-surface)', borderBottom: '1px solid var(--wp-border)' },
-                navbar: { background: 'var(--wp-surface)', borderRight: '1px solid var(--wp-border)' },
+                header: { background: 'var(--wp-chrome)', borderBottom: '1px solid var(--wp-border)' },
+                navbar: { background: 'var(--wp-chrome)', borderRight: '1px solid var(--wp-border)' },
             }}
         >
             <AppShell.Header>
@@ -103,6 +105,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="xs" aria-label="Menü" />
                         <Wordmark />
                     </Group>
+                    <CommandPaletteTrigger />
                     <Group gap="md" wrap="nowrap">
                         <PriceIndicator />
                         {/* Both icons are rendered and hidden with CSS, so server and client markup match. */}
@@ -145,6 +148,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     </Text>
                 </div>
             </AppShell.Main>
+
+            <CommandPalette />
+            <TradeModalHost />
         </AppShell>
     );
 }

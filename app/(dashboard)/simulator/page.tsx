@@ -260,7 +260,7 @@ export default function SimulatorPage() {
                 {/* ---- Results ---- */}
                 <Stack gap={16} className="wp-sim-results" style={{ minWidth: 0 }}>
                     {!ready || (running && !result) ? (
-                        <Skeleton h={480} radius={8} />
+                        <Skeleton h={480} radius={12} />
                     ) : !result || !final ? (
                         <Panel>
                             <Stack align="center" gap={6} py={64}>

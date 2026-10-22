@@ -8,7 +8,7 @@ import { IconDownload, IconUpload, IconTrash } from '@tabler/icons-react';
 import { downloadBackup, portfolioActions, usePortfolioState, useStoreReady } from '@/lib/portfolio-store';
 import { FEATURES } from '@/lib/features';
 import { formatDate, formatTimestamp } from '@/lib/format';
-import { PageHeader, Panel } from '@/components/ui/primitives';
+import { PageHeader, Panel, Pill } from '@/components/ui/primitives';
 
 const MODULE_LABELS: Record<keyof typeof FEATURES, string> = {
     budget: 'Gelir / gider takibi',
@@ -144,7 +144,7 @@ export default function SettingsPage() {
                     </Text>
                     {(Object.keys(FEATURES) as (keyof typeof FEATURES)[]).map(k => (
                         <Row key={k} label={MODULE_LABELS[k]}>
-                            <Text size="xs" c={FEATURES[k] ? 'var(--wp-pos)' : 'var(--wp-text-3)'}>{FEATURES[k] ? 'Açık' : 'Kapalı'}</Text>
+                            {FEATURES[k] ? <Pill tone="accent">Açık</Pill> : <Pill>Kapalı</Pill>}
                         </Row>
                     ))}
                 </Panel>

@@ -12,7 +12,7 @@ import { usePortfolio, useStoreReady } from '@/lib/portfolio-store';
 import {
     formatCurrency, formatPercent, formatCompactTRY, formatSignedCurrency, formatShare, formatDate,
 } from '@/lib/format';
-import { PageHeader, Panel, StatStrip, Signed, EmptyState, ChartTooltip, axisProps, toneOf } from '@/components/ui/primitives';
+import { PageHeader, Panel, Signed, EmptyState, ChartTooltip, axisProps } from '@/components/ui/primitives';
 import { ASSET_COLORS } from '@/components/ui/asset-colors';
 
 const RANGES = [
@@ -45,8 +45,8 @@ export default function DashboardPage() {
         return (
             <>
                 <PageHeader title="Özet" />
-                <Skeleton h={78} radius={8} />
-                <Skeleton h={320} radius={8} mt={16} />
+                <Skeleton h={78} radius={12} />
+                <Skeleton h={320} radius={12} mt={16} />
             </>
         );
     }
@@ -82,31 +82,44 @@ export default function DashboardPage() {
                 }
             />
 
-            <StatStrip
-                items={[
-                    { label: 'Piyasa değeri', value: formatCurrency(summary.totalValue), sub: `Maliyet ${formatCurrency(summary.totalCost)}` },
-                    {
-                        label: 'Bugün',
-                        value: formatSignedCurrency(summary.dayChange),
-                        tone: toneOf(summary.dayChange),
-                        sub: summary.dayChangePct !== null ? formatPercent(summary.dayChangePct) : '—',
-                        subTone: toneOf(summary.dayChange),
-                    },
-                    {
-                        label: 'Gerçekleşmemiş K/Z',
-                        value: formatSignedCurrency(summary.unrealizedPnl),
-                        tone: toneOf(summary.unrealizedPnl),
-                        sub: summary.unrealizedPnlPct !== null ? formatPercent(summary.unrealizedPnlPct) : '—',
-                        subTone: toneOf(summary.unrealizedPnl),
-                    },
-                    {
-                        label: 'Gerçekleşen K/Z',
-                        value: formatSignedCurrency(summary.realizedPnl),
-                        tone: toneOf(summary.realizedPnl),
-                        sub: 'Satışlardan',
-                    },
-                ]}
-            />
+            <section className="wp-panel wp-hero">
+                <div className="wp-hero-main">
+                    <div className="wp-label">Portföy değeri</div>
+                    <div className="wp-hero-value" data-testid="hero-value">{formatCurrency(summary.totalValue)}</div>
+                    <Group gap={8} mt={6}>
+                        <Text size="sm" fw={500}>
+                            <Signed value={summary.dayChange}>
+                                {formatSignedCurrency(summary.dayChange)}
+                                {summary.dayChangePct !== null && ` (${formatPercent(summary.dayChangePct)})`}
+                            </Signed>
+                        </Text>
+                        <Text size="sm" c="var(--wp-text-3)">bugün</Text>
+                    </Group>
+                    {/* Allocation at a glance; the Dağılım panel has the detail. */}
+                    <div className="wp-alloc-bar" aria-hidden>
+                        {allocation.map(a => (
+                            <span key={a.type} style={{ width: `${a.weight}%`, background: ASSET_COLORS[a.type] }} title={`${ASSET_TYPE_LABELS[a.type]} ${formatShare(a.weight)}`} />
+                        ))}
+                    </div>
+                </div>
+                <div className="wp-stat">
+                    <div className="wp-label">Maliyet</div>
+                    <div className="wp-stat-value">{formatCurrency(summary.totalCost)}</div>
+                    <div className="wp-stat-sub">Açık pozisyonlar</div>
+                </div>
+                <div className="wp-stat">
+                    <div className="wp-label">Gerçekleşmemiş K/Z</div>
+                    <div className="wp-stat-value"><Signed value={summary.unrealizedPnl}>{formatSignedCurrency(summary.unrealizedPnl)}</Signed></div>
+                    <div className="wp-stat-sub">
+                        {summary.unrealizedPnlPct !== null ? <Signed value={summary.unrealizedPnl}>{formatPercent(summary.unrealizedPnlPct)}</Signed> : '—'}
+                    </div>
+                </div>
+                <div className="wp-stat">
+                    <div className="wp-label">Gerçekleşen K/Z</div>
+                    <div className="wp-stat-value"><Signed value={summary.realizedPnl}>{formatSignedCurrency(summary.realizedPnl)}</Signed></div>
+                    <div className="wp-stat-sub">Satışlardan</div>
+                </div>
+            </section>
 
             <SimpleGrid cols={{ base: 1, lg: 3 }} spacing={16} mt={16}>
                 <Panel

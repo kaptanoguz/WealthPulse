@@ -1,10 +1,9 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Text, Group, Button, ActionIcon, Tooltip, Menu, Modal, NumberInput, Stack, SegmentedControl, Skeleton,
 } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import {
@@ -15,14 +14,14 @@ import { downloadBackup, portfolioActions, usePortfolio, usePriceStatus, useStor
 import {
     formatCurrency, formatNumber, formatPercent, formatSignedCurrency, formatShare, formatDate,
 } from '@/lib/format';
-import TradeModal, { TradePreset } from '@/components/portfolio/TradeModal';
-import { PageHeader, Panel, StatStrip, Signed, EmptyState, toneOf } from '@/components/ui/primitives';
+import { openTrade } from '@/components/portfolio/TradeModal';
+import { PageHeader, Panel, StatStrip, Signed, EmptyState, Pill, toneOf } from '@/components/ui/primitives';
 import { ASSET_COLORS } from '@/components/ui/asset-colors';
 
 function Notice({ children }: { children: React.ReactNode }) {
     return (
         <Group gap={8} wrap="nowrap" px="md" py={10} mb="md"
-            style={{ border: '1px solid var(--wp-border)', borderLeft: '2px solid var(--wp-warn)', borderRadius: 6, background: 'var(--wp-surface)' }}>
+            style={{ border: '1px solid var(--wp-border)', borderLeft: '2px solid var(--wp-warn)', borderRadius: 10, background: 'var(--wp-surface)', boxShadow: 'var(--wp-shadow)' }}>
             <IconAlertTriangle size={15} color="var(--wp-warn)" style={{ flex: 'none' }} />
             <Text size="sm" c="var(--wp-text-2)">{children}</Text>
         </Group>
@@ -47,12 +46,31 @@ export default function PortfolioPage() {
     const { state, summary } = usePortfolio();
     const prices = usePriceStatus();
     const ready = useStoreReady();
-    const [tradeOpened, tradeModal] = useDisclosure(false);
-    const [preset, setPreset] = useState<TradePreset | undefined>();
     const [priceTarget, setPriceTarget] = useState<Holding | null>(null);
     const [manualPrice, setManualPrice] = useState<number | string>('');
     const [typeFilter, setTypeFilter] = useState<'all' | AssetType>('all');
     const fileRef = useRef<HTMLInputElement>(null);
+
+    // "/portfolio#stock:THYAO" (from the command palette) scrolls to and flashes that row.
+    useEffect(() => {
+        if (!ready) return;
+        const focus = () => {
+            const key = decodeURIComponent(window.location.hash.slice(1));
+            if (!key) return;
+            setTypeFilter('all');
+            requestAnimationFrame(() => {
+                const row = document.getElementById(`holding-${key}`);
+                if (!row) return;
+                row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                row.classList.remove('wp-flash');
+                void row.offsetWidth;
+                row.classList.add('wp-flash');
+            });
+        };
+        focus();
+        window.addEventListener('hashchange', focus);
+        return () => window.removeEventListener('hashchange', focus);
+    }, [ready]);
 
     const presentTypes = useMemo(() => [...new Set(summary.holdings.map(h => h.type))], [summary.holdings]);
     const filter = typeFilter !== 'all' && !presentTypes.includes(typeFilter) ? 'all' : typeFilter;
@@ -63,11 +81,6 @@ export default function PortfolioPage() {
     const filteredValue = holdings.reduce((s, h) => s + h.marketValue, 0);
     const filteredCost = holdings.reduce((s, h) => s + h.costBasis, 0);
     const filteredPnl = filteredValue - filteredCost;
-
-    const openTrade = (p?: TradePreset) => {
-        setPreset(p);
-        tradeModal.open();
-    };
 
     const deleteTrade = (id: string, label: string) => {
         modals.openConfirmModal({
@@ -153,7 +166,7 @@ export default function PortfolioPage() {
             )}
 
             {!ready ? (
-                <Skeleton h={78} radius={8} />
+                <Skeleton h={78} radius={12} />
             ) : (
                 <StatStrip
                     items={[
@@ -220,7 +233,7 @@ export default function PortfolioPage() {
                             </thead>
                             <tbody>
                                 {holdings.map(h => (
-                                    <tr key={h.key}>
+                                    <tr key={h.key} id={`holding-${h.key}`}>
                                         <td><AssetCell type={h.type} symbol={h.symbol} name={h.name} /></td>
                                         <td className="num">{formatNumber(h.quantity, 8)}</td>
                                         <td className="num">{formatCurrency(h.avgCost)}</td>
@@ -228,16 +241,16 @@ export default function PortfolioPage() {
                                             {h.quote ? (
                                                 <>
                                                     <div>{formatCurrency(h.quote.price, h.quote.currency)}</div>
-                                                    <Text size="xs" lh={1.3} c={h.quote.source === 'manual' || missing.has(h.key) ? 'var(--wp-text-3)' : undefined}>
+                                                    <div style={{ marginTop: 2 }}>
                                                         {h.quote.source === 'manual'
-                                                            ? `elle · ${formatDate(h.quote.asOf)}`
+                                                            ? <Pill title={`Elle girildi: ${formatDate(h.quote.asOf)}`}>Elle · {formatDate(h.quote.asOf).slice(0, 5)}</Pill>
                                                             : missing.has(h.key)
-                                                                ? 'son bilinen'
-                                                                : <Signed value={h.quote.changePercent}>{formatPercent(h.quote.changePercent)}</Signed>}
-                                                    </Text>
+                                                                ? <Pill tone="warn" title="Son yenilemede fiyat alınamadı">Son bilinen</Pill>
+                                                                : <Text size="xs" lh={1.3}><Signed value={h.quote.changePercent}>{formatPercent(h.quote.changePercent)}</Signed></Text>}
+                                                    </div>
                                                 </>
                                             ) : (
-                                                <Text size="xs" c="var(--wp-warn)">fiyat yok</Text>
+                                                <Pill tone="warn" title="Canlı fiyat yok; maliyetle değerleniyor">Fiyat yok</Pill>
                                             )}
                                         </td>
                                         <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(h.marketValue)}</td>
@@ -365,7 +378,6 @@ export default function PortfolioPage() {
                 </Text>
             )}
 
-            <TradeModal opened={tradeOpened} onClose={tradeModal.close} preset={preset} />
 
             <Modal opened={priceTarget !== null} onClose={() => setPriceTarget(null)} title={<Text fw={600}>Fiyatı elle gir</Text>} size="sm">
                 {priceTarget && (

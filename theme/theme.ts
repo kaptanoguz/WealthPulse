@@ -38,7 +38,8 @@ export const theme = createTheme({
     primaryColor: 'accent',
     primaryShade: { light: 6, dark: 5 },
     colors: { accent, dark },
-    defaultRadius: 'sm',
+    defaultRadius: 'md',
+    radius: { xs: '4px', sm: '6px', md: '8px', lg: '12px', xl: '16px' },
     fontSizes: { xs: '11px', sm: '13px', md: '14px', lg: '16px', xl: '20px' },
     headings: {
         fontFamily: fontStack,
@@ -55,9 +56,9 @@ export const theme = createTheme({
         ActionIcon: { defaultProps: { variant: 'subtle', color: 'gray' } },
         Badge: { defaultProps: { radius: 'sm', variant: 'light' } },
         Tooltip: { defaultProps: { openDelay: 300, withArrow: false, fz: 'xs' } },
-        Modal: { defaultProps: { centered: true, overlayProps: { backgroundOpacity: 0.6 } } },
-        Menu: { defaultProps: { shadow: 'md', radius: 'sm' } },
-        SegmentedControl: { defaultProps: { size: 'xs', radius: 'sm' } },
+        Modal: { defaultProps: { centered: true, radius: 'lg', overlayProps: { backgroundOpacity: 0.45, blur: 2 } } },
+        Menu: { defaultProps: { shadow: 'md', radius: 'md' } },
+        SegmentedControl: { defaultProps: { size: 'xs', radius: 'md' } },
         Table: { defaultProps: { verticalSpacing: 8, horizontalSpacing: 12 } },
     },
 });
