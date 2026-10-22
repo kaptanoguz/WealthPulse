@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { fetchTruncgilToday } from '@/lib/market-sources';
 
 /**
  * Piyasa verileri API — Canlı Veri
@@ -21,17 +22,6 @@ interface MarketResponse {
     isLive: boolean;
     market?: string;
     currency?: string;
-}
-
-// --- Turkish number parser ---
-function parseTR(str: string): number {
-    if (!str) return 0;
-    return parseFloat(str.replace('$', '').trim().replace(/\./g, '').replace(',', '.')) || 0;
-}
-
-function parseChangePct(str: string): number {
-    if (!str) return 0;
-    return parseFloat(str.replace('%', '').replace(',', '.')) || 0;
 }
 
 // --- Yahoo Finance for BIST + US Stocks + ETFs + Funds ---
@@ -165,45 +155,30 @@ async function fetchYahooQuotes(
 
 // --- Döviz from truncgil ---
 async function fetchForex(): Promise<MarketResponse[]> {
-    try {
-        const res = await fetch('https://finans.truncgil.com/today.json', {
-            headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' },
-            next: { revalidate: 120 },
-        });
-        if (!res.ok) return [];
-        const data = await res.json();
-
-        const forexMap: Record<string, string> = {
-            'USD': 'ABD Doları',
-            'EUR': 'Euro',
-            'GBP': 'İngiliz Sterlini',
-            'CHF': 'İsviçre Frangı',
-        };
-
-        return Object.entries(forexMap).map(([key, name]) => {
-            const item = data[key];
-            if (!item) return null;
-            const buying = parseTR(item['Alış'] || '0');
-            const selling = parseTR(item['Satış'] || '0');
-            const changePct = parseChangePct(item['Değişim'] || '0');
-            const midPrice = (buying + selling) / 2;
-            const changeAbs = midPrice * (changePct / 100);
-
-            return {
-                symbol: `${key}/TRY`,
-                name,
-                price: midPrice,
-                change: changeAbs,
-                changePercent: changePct,
-                type: 'forex' as const,
-                sparkline: [],
-                isLive: true,
-                currency: 'TRY',
-            };
-        }).filter(Boolean) as MarketResponse[];
-    } catch {
-        return [];
-    }
+    const today = await fetchTruncgilToday();
+    if (!today) return [];
+    const forexMap: Record<string, string> = {
+        'USD': 'ABD Doları',
+        'EUR': 'Euro',
+        'GBP': 'İngiliz Sterlini',
+        'CHF': 'İsviçre Frangı',
+    };
+    return Object.entries(forexMap).flatMap(([key, name]) => {
+        const item = today.items[key];
+        if (!item || item.buying <= 0 || item.selling <= 0) return [];
+        const midPrice = (item.buying + item.selling) / 2;
+        return [{
+            symbol: `${key}/TRY`,
+            name,
+            price: midPrice,
+            change: midPrice * (item.changePercent / 100),
+            changePercent: item.changePercent,
+            type: 'forex' as const,
+            sparkline: [],
+            isLive: true,
+            currency: 'TRY',
+        }];
+    });
 }
 
 // --- TEFAS Funds Integration ---

@@ -4,7 +4,7 @@
 // WealthPulse AI — Portfolio store (localStorage, shared across pages)
 // ============================================================
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import {
     Trade, Quote, FxRates, AssetType, Currency, ASSET_TYPES,
     holdingKey, buildPositions, summarizePortfolio, validateTrade,
@@ -257,57 +257,99 @@ export function usePortfolio() {
     return { state: s, summary };
 }
 
+// --- Price refresh (one refresher for the whole app) -------------------------
+
+export interface PriceStatus {
+    loading: boolean;
+    error: string | null;
+    /** Holding keys the last refresh could not price. */
+    missing: string[];
+}
+
+let priceStatus: PriceStatus = { loading: false, error: null, missing: [] };
+const statusListeners = new Set<() => void>();
+const IDLE_STATUS: PriceStatus = priceStatus;
+
+function setPriceStatus(patch: Partial<PriceStatus>) {
+    priceStatus = { ...priceStatus, ...patch };
+    statusListeners.forEach(l => l());
+}
+
+function openPositionItems(trades: Trade[]) {
+    const out: { type: AssetType; symbol: string; currency: Currency }[] = [];
+    for (const p of buildPositions(trades).values()) {
+        if (p.quantity > 0) out.push({ type: p.type, symbol: p.symbol, currency: p.currency });
+    }
+    return out;
+}
+
+let inFlight: Promise<void> | null = null;
+let rerun = false;
+
 /**
- * Fetches live prices for every open holding on mount and every 2 minutes.
- * Last known prices stay in storage, so the app still works offline.
+ * Fetches quotes for every open holding plus TRY FX rates. A call made while a
+ * request is running schedules exactly one follow-up, so newly added holdings
+ * are never skipped.
  */
-export function usePriceRefresh() {
-    const s = usePortfolioState();
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [missing, setMissing] = useState<string[]>([]);
-
-    const items = useMemo(() => {
-        const out: { type: AssetType; symbol: string; currency: Currency }[] = [];
-        for (const p of buildPositions(s.trades).values()) {
-            if (p.quantity > 0) out.push({ type: p.type, symbol: p.symbol, currency: p.currency });
-        }
-        return out;
-    }, [s.trades]);
-    const itemsKey = JSON.stringify(items);
-
-    const refresh = useCallback(async () => {
-        setLoading(true);
-        setError(null);
+export function refreshPrices(): Promise<void> {
+    if (inFlight) {
+        rerun = true;
+        return inFlight;
+    }
+    setPriceStatus({ loading: true, error: null });
+    inFlight = (async () => {
         try {
             const res = await fetch('/api/prices', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items: JSON.parse(itemsKey) }),
+                body: JSON.stringify({ items: openPositionItems(getSnapshot().trades) }),
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const json = await res.json();
             const quotes = json.quotes ?? {};
-            const missingKeys: string[] = Array.isArray(json.missing) ? json.missing : [];
+            const missing: string[] = Array.isArray(json.missing) ? json.missing : [];
             portfolioActions.applyQuotes(quotes, json.fx ?? {}, json.updatedAt ?? new Date().toISOString());
-            setMissing(missingKeys);
-            if (missingKeys.length > 0 && Object.keys(quotes).length === 0) {
-                setError('Fiyat kaynaklarına ulaşılamadı; son bilinen fiyatlar gösteriliyor.');
-            }
+            const nothingPriced = missing.length > 0 && Object.keys(quotes).length === 0;
+            setPriceStatus({
+                missing,
+                error: nothingPriced ? 'Fiyat kaynaklarına ulaşılamadı; son bilinen fiyatlar gösteriliyor.' : null,
+            });
         } catch {
-            setError('Canlı fiyatlar alınamadı; son bilinen fiyatlar gösteriliyor.');
+            setPriceStatus({ error: 'Canlı fiyatlar alınamadı; son bilinen fiyatlar gösteriliyor.' });
         } finally {
-            setLoading(false);
+            setPriceStatus({ loading: false });
+            inFlight = null;
+            if (rerun) {
+                rerun = false;
+                void refreshPrices();
+            }
         }
-    }, [itemsKey]);
+    })();
+    return inFlight;
+}
 
+export function usePriceStatus(): PriceStatus & { updatedAt: string | null } {
+    const status = useSyncExternalStore(
+        l => { statusListeners.add(l); return () => { statusListeners.delete(l); }; },
+        () => priceStatus,
+        () => IDLE_STATUS,
+    );
+    const { quotesUpdatedAt } = usePortfolioState();
+    return { ...status, updatedAt: quotesUpdatedAt };
+}
+
+/**
+ * Mount once (in the app shell): refreshes on start, whenever the set of open
+ * holdings changes, and every 2 minutes. Last known prices stay in storage.
+ */
+export function usePriceAutoRefresh() {
+    const { trades } = usePortfolioState();
+    const itemsKey = useMemo(() => JSON.stringify(openPositionItems(trades)), [trades]);
     useEffect(() => {
-        void refresh();
-        const id = setInterval(refresh, REFRESH_MS);
+        void refreshPrices();
+        const id = setInterval(() => void refreshPrices(), REFRESH_MS);
         return () => clearInterval(id);
-    }, [refresh]);
-
-    return { refresh, loading, error, missing, updatedAt: s.quotesUpdatedAt };
+    }, [itemsKey]);
 }
 
 const noopSubscribe = () => () => {};
@@ -315,4 +357,15 @@ const noopSubscribe = () => () => {};
 /** false during SSR / hydration, true once localStorage has been read on the client. */
 export function useStoreReady(): boolean {
     return useSyncExternalStore(noopSubscribe, () => true, () => false);
+}
+
+/** Saves the full state as a dated JSON file via the browser's download. */
+export function downloadBackup() {
+    const blob = new Blob([portfolioActions.exportJson()], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `wealthpulse-yedek-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
 }

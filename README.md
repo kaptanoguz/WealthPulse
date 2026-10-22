@@ -1,4 +1,4 @@
-# WealthPulse AI 📊
+# WealthPulse
 
 Portfolio tracker with Monte Carlo projections, built for Turkish investors. Track stocks (BIST and US), gold, FX, funds and crypto in TRY, and see the range of outcomes your portfolio could reach, with inflation taken into account.
 
@@ -15,6 +15,12 @@ Portfolio tracker with Monte Carlo projections, built for Turkish investors. Tra
   - You can add monthly contributions and an inflation rate, and view results in real terms (today's lira) or nominal terms.
   - It reports P10–P90 bands, the probability of beating inflation, the probability of a nominal loss, the probability of reaching a target, and the median maximum drawdown.
   - Runs are seeded, so the same inputs give the same result.
+
+## Interface
+
+- The UI is built for reading numbers. Panels sit on neutral surfaces with a single accent color. Every figure uses tabular numerals, numeric columns are right-aligned, and green and red are reserved for gains and losses.
+- Light and dark themes are both supported, including a "follow the system" option. Charts read their colors from the same design tokens.
+- Nothing on screen is decorative or fake: there are no placeholder profiles, notifications or demo prices. When a data source is down, the app says so.
 
 ## Optional modules (off by default)
 
@@ -37,6 +43,8 @@ Core logic is plain TypeScript with no UI dependencies:
 | `lib/montecarlo.ts` | Seeded GBM simulation, percentiles, probabilities |
 | `lib/portfolio-store.ts` | Persistence (localStorage), price refresh, backup/restore |
 | `app/api/prices/route.ts` | Live quotes and TRY FX rates for held assets |
+| `lib/market-sources.ts` | Truncgil / Yahoo / CoinGecko fetchers, tolerant of both Truncgil field formats |
+| `components/ui/primitives.tsx` | Panel, StatStrip, PageHeader and chart tooltip used across pages |
 
 ## Tech
 

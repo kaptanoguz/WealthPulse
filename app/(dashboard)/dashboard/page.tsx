@@ -1,176 +1,263 @@
 'use client';
 
 import Link from 'next/link';
-import { SimpleGrid, Text, Group, Stack, Paper, Button, Table, Badge, Skeleton } from '@mantine/core';
+import { useMemo, useState } from 'react';
+import { SimpleGrid, Text, Group, Button, SegmentedControl, Skeleton, Stack } from '@mantine/core';
+import { IconArrowRight, IconPlus } from '@tabler/icons-react';
 import {
-    IconWallet, IconTrendingUp, IconTrendingDown, IconCoins, IconChartPie, IconCpu, IconPlus,
-} from '@tabler/icons-react';
-import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
+    AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
-import { allocationByType } from '@/lib/portfolio';
-import { usePortfolio, usePriceRefresh, useStoreReady } from '@/lib/portfolio-store';
-import { formatCurrency, formatPercent, formatCompactTRY } from '@/lib/format';
+import { allocationByType, ASSET_TYPE_LABELS } from '@/lib/portfolio';
+import { usePortfolio, useStoreReady } from '@/lib/portfolio-store';
+import {
+    formatCurrency, formatPercent, formatCompactTRY, formatSignedCurrency, formatShare, formatDate,
+} from '@/lib/format';
+import { PageHeader, Panel, Signed, EmptyState, ChartTooltip, axisProps } from '@/components/ui/primitives';
+import { ASSET_COLORS } from '@/components/ui/asset-colors';
 
-const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
-const tooltipStyle = { background: '#1a2035', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 };
+const RANGES = [
+    { value: '30', label: '1A' },
+    { value: '90', label: '3A' },
+    { value: '365', label: '1Y' },
+    { value: 'all', label: 'Tümü' },
+];
 
 export default function DashboardPage() {
     const { state, summary } = usePortfolio();
-    usePriceRefresh();
-    const allocation = allocationByType(summary.holdings);
-    const history = state.snapshots;
     const ready = useStoreReady();
+    const [range, setRange] = useState('90');
+    const allocation = useMemo(() => allocationByType(summary.holdings), [summary.holdings]);
+
+    const history = useMemo(() => {
+        if (range === 'all') return state.snapshots;
+        const from = new Date();
+        from.setDate(from.getDate() - Number(range));
+        const iso = from.toISOString().slice(0, 10);
+        return state.snapshots.filter(s => s.date >= iso);
+    }, [state.snapshots, range]);
+
+    const movers = useMemo(
+        () => summary.holdings.filter(h => h.quote && h.dayChange !== 0).sort((a, b) => Math.abs(b.dayChange) - Math.abs(a.dayChange)).slice(0, 5),
+        [summary.holdings],
+    );
 
     if (!ready) {
         return (
-            <Stack gap="lg">
-                <Text size="xl" fw={800}>Özet</Text>
-                <SimpleGrid cols={{ base: 2, lg: 4 }} spacing="md">
-                    {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} h={110} radius="md" />)}
-                </SimpleGrid>
-                <Skeleton h={320} radius="md" />
-            </Stack>
+            <>
+                <PageHeader title="Özet" />
+                <Skeleton h={78} radius={12} />
+                <Skeleton h={320} radius={12} mt={16} />
+            </>
         );
     }
 
     if (state.trades.length === 0) {
         return (
-            <Stack gap="lg">
-                <Text size="xl" fw={800}>Özet</Text>
-                <Paper p="xl" radius="md" style={{ background: 'var(--wp-bg-card)', border: '1px solid var(--wp-border)' }}>
-                    <Stack align="center" gap="sm" py="lg">
-                        <IconWallet size={36} color="#3b82f6" />
-                        <Text fw={700} size="lg">Portföyünüzü oluşturarak başlayın</Text>
-                        <Text c="dimmed" size="sm" ta="center" maw={520}>
-                            Hisse, altın, döviz, fon ve kripto alışlarınızı girin; güncel değer, kâr/zarar ve dağılım otomatik hesaplansın.
-                            Ardından Monte Carlo simülasyonuyla portföyünüzün olası geleceğini görün.
-                        </Text>
-                        <Button component={Link} href="/portfolio" leftSection={<IconPlus size={16} />} mt="sm">Portföye git</Button>
-                    </Stack>
-                </Paper>
-            </Stack>
+            <>
+                <PageHeader title="Özet" />
+                <Panel>
+                    <EmptyState
+                        title="Portföyünüzü oluşturun"
+                        description="Alışlarınızı girin; piyasa değeri, kâr/zarar ve varlık dağılımı canlı fiyatlarla hesaplansın. Ardından Monte Carlo simülasyonuyla portföyün olası geleceğini inceleyin."
+                        action={<Button component={Link} href="/portfolio" leftSection={<IconPlus size={15} />}>İlk işlemi ekle</Button>}
+                    />
+                </Panel>
+            </>
         );
     }
 
-    const kpis = [
-        {
-            label: 'Toplam değer',
-            value: formatCurrency(summary.totalValue),
-            sub: summary.dayChangePct !== null && summary.dayChange !== 0 ? `Bugün ${formatPercent(summary.dayChangePct)}` : undefined,
-            positive: summary.dayChange >= 0,
-            icon: IconWallet,
-            color: '#3b82f6',
-        },
-        {
-            label: 'Gerçekleşmemiş K/Z',
-            value: formatCurrency(summary.unrealizedPnl),
-            sub: summary.unrealizedPnlPct !== null ? formatPercent(summary.unrealizedPnlPct) : undefined,
-            positive: summary.unrealizedPnl >= 0,
-            icon: summary.unrealizedPnl >= 0 ? IconTrendingUp : IconTrendingDown,
-            color: summary.unrealizedPnl >= 0 ? '#22c55e' : '#ef4444',
-        },
-        {
-            label: 'Gerçekleşen K/Z',
-            value: formatCurrency(summary.realizedPnl),
-            positive: summary.realizedPnl >= 0,
-            icon: IconCoins,
-            color: '#f59e0b',
-        },
-        {
-            label: 'Varlık sayısı',
-            value: String(summary.holdings.length),
-            sub: allocation[0] ? `En büyük: ${allocation[0].name} %${allocation[0].weight.toFixed(0)}` : undefined,
-            positive: true,
-            icon: IconChartPie,
-            color: '#8b5cf6',
-        },
-    ];
+    const first = history[0];
+    const last = history[history.length - 1];
+    const periodChange = first && last ? last.value - last.cost - (first.value - first.cost) : 0;
 
     return (
-        <Stack gap="lg">
-            <Group justify="space-between">
-                <Text size="xl" fw={800}>Özet</Text>
-                <Button component={Link} href="/simulator" variant="light" leftSection={<IconCpu size={16} />} size="sm">
-                    Bu portföyü simüle et
-                </Button>
-            </Group>
+        <>
+            <PageHeader
+                title="Özet"
+                description={`${summary.holdings.length} açık pozisyon`}
+                actions={
+                    <Button component={Link} href="/simulator" variant="default" rightSection={<IconArrowRight size={14} />}>
+                        Simülasyona git
+                    </Button>
+                }
+            />
 
-            <SimpleGrid cols={{ base: 2, lg: 4 }} spacing="md">
-                {kpis.map(kpi => (
-                    <div className="kpi-card" key={kpi.label}>
-                        <Group gap={6} mb={6}>
-                            <kpi.icon size={16} color={kpi.color} />
-                            <div className="kpi-label">{kpi.label}</div>
-                        </Group>
-                        <div className="kpi-value" style={{ fontSize: 22 }}>{kpi.value}</div>
-                        {kpi.sub && <div className={`kpi-change ${kpi.positive ? 'positive' : 'negative'}`}>{kpi.sub}</div>}
-                    </div>
-                ))}
-            </SimpleGrid>
-
-            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-                <div className="chart-card">
-                    <h3>📈 Portföy değeri ve maliyet</h3>
-                    {history.length < 2 ? (
-                        <Text c="dimmed" size="sm" py="xl" ta="center">
-                            Geçmiş grafik, uygulamayı farklı günlerde açtıkça oluşur (günde bir kayıt).
+            <section className="wp-panel wp-hero">
+                <div className="wp-hero-main">
+                    <div className="wp-label">Portföy değeri</div>
+                    <div className="wp-hero-value" data-testid="hero-value">{formatCurrency(summary.totalValue)}</div>
+                    <Group gap={8} mt={6}>
+                        <Text size="sm" fw={500}>
+                            <Signed value={summary.dayChange}>
+                                {formatSignedCurrency(summary.dayChange)}
+                                {summary.dayChangePct !== null && ` (${formatPercent(summary.dayChangePct)})`}
+                            </Signed>
                         </Text>
-                    ) : (
-                        <ResponsiveContainer width="100%" height={280}>
-                            <LineChart data={history}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                <XAxis dataKey="date" stroke="#64748b" fontSize={11} tickFormatter={v => String(v).slice(5)} />
-                                <YAxis stroke="#64748b" fontSize={11} tickFormatter={formatCompactTRY} width={70} />
-                                <Tooltip
-                                    contentStyle={tooltipStyle}
-                                    formatter={(v?: number | string, name?: string) => [formatCurrency(Number(v ?? 0)), name === 'value' ? 'Değer' : 'Maliyet']}
-                                />
-                                <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
-                                <Line type="stepAfter" dataKey="cost" stroke="#64748b" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    )}
+                        <Text size="sm" c="var(--wp-text-3)">bugün</Text>
+                    </Group>
+                    {/* Allocation at a glance; the Dağılım panel has the detail. */}
+                    <div className="wp-alloc-bar" aria-hidden>
+                        {allocation.map(a => (
+                            <span key={a.type} style={{ width: `${a.weight}%`, background: ASSET_COLORS[a.type] }} title={`${ASSET_TYPE_LABELS[a.type]} ${formatShare(a.weight)}`} />
+                        ))}
+                    </div>
                 </div>
+                <div className="wp-stat">
+                    <div className="wp-label">Maliyet</div>
+                    <div className="wp-stat-value">{formatCurrency(summary.totalCost)}</div>
+                    <div className="wp-stat-sub">Açık pozisyonlar</div>
+                </div>
+                <div className="wp-stat">
+                    <div className="wp-label">Gerçekleşmemiş K/Z</div>
+                    <div className="wp-stat-value"><Signed value={summary.unrealizedPnl}>{formatSignedCurrency(summary.unrealizedPnl)}</Signed></div>
+                    <div className="wp-stat-sub">
+                        {summary.unrealizedPnlPct !== null ? <Signed value={summary.unrealizedPnl}>{formatPercent(summary.unrealizedPnlPct)}</Signed> : '—'}
+                    </div>
+                </div>
+                <div className="wp-stat">
+                    <div className="wp-label">Gerçekleşen K/Z</div>
+                    <div className="wp-stat-value"><Signed value={summary.realizedPnl}>{formatSignedCurrency(summary.realizedPnl)}</Signed></div>
+                    <div className="wp-stat-sub">Satışlardan</div>
+                </div>
+            </section>
 
-                <div className="chart-card">
-                    <h3>🍩 Varlık dağılımı</h3>
-                    <ResponsiveContainer width="100%" height={280}>
-                        <PieChart>
-                            <Pie data={allocation} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="value" nameKey="name">
-                                {allocation.map((a, i) => <Cell key={a.type} fill={COLORS[i % COLORS.length]} />)}
-                            </Pie>
-                            <Tooltip contentStyle={tooltipStyle} formatter={(v?: number | string) => [formatCurrency(Number(v ?? 0)), 'Tutar']} />
-                            <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
+            <SimpleGrid cols={{ base: 1, lg: 3 }} spacing={16} mt={16}>
+                <Panel
+                    className="wp-span-2"
+                    title="Değer geçmişi"
+                    actions={<SegmentedControl value={range} onChange={setRange} data={RANGES} />}
+                >
+                    {history.length < 2 ? (
+                        <Stack h={260} justify="center" align="center" gap={4}>
+                            <Text size="sm" c="var(--wp-text-2)">Henüz yeterli geçmiş yok</Text>
+                            <Text size="xs" c="var(--wp-text-3)" ta="center" maw={360}>
+                                Uygulama her gün portföy değerinin bir kaydını tutar; grafik ikinci günden itibaren oluşur.
+                            </Text>
+                        </Stack>
+                    ) : (
+                        <>
+                            <Group gap="lg" mb="sm">
+                                <Group gap={6}><span className="wp-dot" style={{ background: 'var(--wp-c1)' }} /><Text size="xs" c="var(--wp-text-2)">Piyasa değeri</Text></Group>
+                                <Group gap={6}><span className="wp-dot" style={{ background: 'var(--wp-text-3)' }} /><Text size="xs" c="var(--wp-text-2)">Maliyet</Text></Group>
+                                <Text size="xs" c="var(--wp-text-3)" ml="auto">
+                                    Dönem K/Z değişimi <Signed value={periodChange}>{formatSignedCurrency(periodChange)}</Signed>
+                                </Text>
+                            </Group>
+                            <ResponsiveContainer width="100%" height={240} initialDimension={{ width: 600, height: 240 }}>
+                                <AreaChart data={history} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                                    <defs>
+                                        <linearGradient id="valueFill" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stopColor="var(--wp-c1)" stopOpacity={0.18} />
+                                            <stop offset="100%" stopColor="var(--wp-c1)" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid vertical={false} stroke="var(--wp-grid)" />
+                                    <XAxis dataKey="date" {...axisProps} tickFormatter={v => formatDate(String(v)).slice(0, 5)} minTickGap={32} />
+                                    <YAxis {...axisProps} tickFormatter={formatCompactTRY} width={64} domain={['auto', 'auto']} />
+                                    <Tooltip
+                                        cursor={{ stroke: 'var(--wp-border-strong)' }}
+                                        content={<ChartTooltip
+                                            title={l => formatDate(String(l))}
+                                            rows={e => ({ label: e.dataKey === 'value' ? 'Piyasa değeri' : 'Maliyet', value: formatCurrency(Number(e.value)), color: e.dataKey === 'value' ? 'var(--wp-c1)' : 'var(--wp-text-3)' })}
+                                        />}
+                                    />
+                                    <Area type="monotone" dataKey="value" stroke="var(--wp-c1)" strokeWidth={1.75} fill="url(#valueFill)" isAnimationActive={false} />
+                                    <Line type="stepAfter" dataKey="cost" stroke="var(--wp-text-3)" strokeWidth={1} strokeDasharray="3 3" dot={false} isAnimationActive={false} />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </>
+                    )}
+                </Panel>
+
+                <Panel title="Dağılım" padded={false}>
+                    <div style={{ height: 150, padding: '12px 0 0' }}>
+                        <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 240, height: 150 }}>
+                            <PieChart>
+                                <Pie data={allocation} dataKey="value" nameKey="name" innerRadius={44} outerRadius={64} paddingAngle={1.5} stroke="none" isAnimationActive={false}>
+                                    {allocation.map(a => <Cell key={a.type} fill={ASSET_COLORS[a.type]} />)}
+                                </Pie>
+                                <Tooltip content={<ChartTooltip title={() => 'Dağılım'} rows={e => ({ label: String(e.name), value: formatCurrency(Number(e.value)) })} />} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+                    <table className="wp-table">
+                        <tbody>
+                            {allocation.map(a => (
+                                <tr key={a.type}>
+                                    <td>
+                                        <Group gap={8} wrap="nowrap">
+                                            <span className="wp-dot" style={{ background: ASSET_COLORS[a.type] }} />
+                                            {ASSET_TYPE_LABELS[a.type]}
+                                        </Group>
+                                    </td>
+                                    <td className="num wp-muted">{formatCurrency(a.value)}</td>
+                                    <td className="num" style={{ fontWeight: 600, width: 64 }}>{formatShare(a.weight)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </Panel>
             </SimpleGrid>
 
-            <Paper p="lg" radius="md" style={{ background: 'var(--wp-bg-card)', border: '1px solid var(--wp-border)' }}>
-                <Group justify="space-between" mb="md">
-                    <Text fw={600} c="dimmed" size="sm">En büyük pozisyonlar</Text>
-                    <Button component={Link} href="/portfolio" variant="subtle" size="compact-sm">Tümü</Button>
-                </Group>
-                <Table.ScrollContainer minWidth={520}>
-                    <Table styles={{ td: { fontSize: 13, padding: '8px 12px', borderBottom: '1px solid var(--wp-border)' } }}>
-                        <Table.Tbody>
-                            {summary.holdings.slice(0, 5).map(h => (
-                                <Table.Tr key={h.key}>
-                                    <Table.Td fw={600}>{h.type === 'gold' ? h.name : h.symbol}</Table.Td>
-                                    <Table.Td><Badge size="xs" variant="light">%{h.weight.toFixed(1)}</Badge></Table.Td>
-                                    <Table.Td style={{ textAlign: 'right' }}>{formatCurrency(h.marketValue)}</Table.Td>
-                                    <Table.Td style={{ textAlign: 'right' }}>
-                                        {h.unrealizedPnlPct !== null && h.quote
-                                            ? <Text size="sm" fw={600} c={h.unrealizedPnl >= 0 ? 'green' : 'red'}>{formatPercent(h.unrealizedPnlPct)}</Text>
-                                            : <Text size="xs" c="dimmed">fiyat yok</Text>}
-                                    </Table.Td>
-                                </Table.Tr>
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing={16} mt={16}>
+                <Panel title="En büyük pozisyonlar" padded={false}
+                    actions={<Button component={Link} href="/portfolio" variant="subtle" size="compact-xs">Tümü</Button>}>
+                    <div className="wp-table-scroll">
+                    <table className="wp-table">
+                        <thead>
+                            <tr><th>Varlık</th><th className="num">Değer</th><th className="num">K/Z</th><th className="num">Ağırlık</th></tr>
+                        </thead>
+                        <tbody>
+                            {summary.holdings.slice(0, 6).map(h => (
+                                <tr key={h.key}>
+                                    <td>
+                                        <Group gap={8} wrap="nowrap">
+                                            <span className="wp-dot" style={{ background: ASSET_COLORS[h.type] }} />
+                                            <Text size="sm" fw={500}>{h.type === 'gold' ? h.name : h.symbol}</Text>
+                                        </Group>
+                                    </td>
+                                    <td className="num">{formatCurrency(h.marketValue)}</td>
+                                    <td className="num">
+                                        {h.quote && h.unrealizedPnlPct !== null
+                                            ? <Signed value={h.unrealizedPnl}>{formatPercent(h.unrealizedPnlPct)}</Signed>
+                                            : <span className="wp-faint">—</span>}
+                                    </td>
+                                    <td className="num">{formatShare(h.weight)}</td>
+                                </tr>
                             ))}
-                        </Table.Tbody>
-                    </Table>
-                </Table.ScrollContainer>
-            </Paper>
-        </Stack>
+                        </tbody>
+                    </table>
+                    </div>
+                </Panel>
+
+                <Panel title="Günün hareketleri" padded={false}>
+                    {movers.length === 0 ? (
+                        <Text size="sm" c="var(--wp-text-3)" p="md">Bugün için fiyat değişimi verisi yok.</Text>
+                    ) : (
+                        <div className="wp-table-scroll">
+                        <table className="wp-table">
+                            <thead>
+                                <tr><th>Varlık</th><th className="num">Değişim</th><th className="num">Etki (₺)</th></tr>
+                            </thead>
+                            <tbody>
+                                {movers.map(h => (
+                                    <tr key={h.key}>
+                                        <td>
+                                            <Group gap={8} wrap="nowrap">
+                                                <span className="wp-dot" style={{ background: ASSET_COLORS[h.type] }} />
+                                                <Text size="sm" fw={500}>{h.type === 'gold' ? h.name : h.symbol}</Text>
+                                            </Group>
+                                        </td>
+                                        <td className="num"><Signed value={h.quote!.changePercent}>{formatPercent(h.quote!.changePercent)}</Signed></td>
+                                        <td className="num"><Signed value={h.dayChange}>{formatSignedCurrency(h.dayChange)}</Signed></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        </div>
+                    )}
+                </Panel>
+            </SimpleGrid>
+        </>
     );
 }
