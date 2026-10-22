@@ -6,8 +6,8 @@ import { theme } from '@/theme/theme';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'WealthPulse AI — Finansal Varlık Yönetim Platformu',
-  description: 'Modern AI destekli finansal varlık yönetimi, portföy takibi ve piyasa analizi platformu.',
+  title: 'WealthPulse AI — Portföy Takibi ve Monte Carlo',
+  description: 'TL bazında portföy takibi ve enflasyon düzeltmeli Monte Carlo simülasyonu.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

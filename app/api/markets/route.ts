@@ -231,22 +231,9 @@ async function fetchFunds(): Promise<MarketResponse[]> {
         const yahooFunds = TEFAS_SYMBOLS.filter(s => s.yahoo);
         const yahooData = yahooFunds.length > 0 ? await fetchYahooQuotes(yahooFunds.map(f => ({ yahoo: f.yahoo!, display: f.symbol, name: f.name })), 'fund', 'TEFAS') : [];
 
-        // For others, use mock or another source until a stable TEFAS API is available
-        // Since we want functionality, we'll provide realistic latest prices for major funds
-        const otherFunds = TEFAS_SYMBOLS.filter(s => !s.yahoo).map(f => ({
-            symbol: f.symbol,
-            name: f.name,
-            price: f.symbol === 'AFT' ? 0.3842 : (f.symbol === 'TI1' ? 12.45 : (f.symbol === 'MAC' ? 24.18 : 5.75)),
-            change: 0.02,
-            changePercent: 0.45,
-            type: 'fund' as const,
-            sparkline: [],
-            isLive: true,
-            currency: 'TRY',
-            market: 'TEFAS',
-        }));
-
-        return [...yahooData, ...otherFunds];
+        // Funds without a Yahoo listing have no free live feed yet (TEFAS integration pending).
+        // Don't invent prices for them; the portfolio lets users enter those manually.
+        return yahooData;
     } catch {
         return [];
     }

@@ -1,7 +1,7 @@
 {
   "name": "wealthpulseai",
   "version": "1.0.0",
-  "description": "WealthPulse AI — Modern Finansal Varlık Yönetim Platformu. Canlı piyasa verileri, portföy yönetimi, gelir/gider takibi, ekonomi haberleri ve Monte Carlo simülasyonu.",
+  "description": "WealthPulse AI — Portföy takibi ve Monte Carlo simülasyonu. Hisse, altın, döviz, fon ve kripto varlıklarınızı TL bazında izleyin, enflasyona göre olası gelecek senaryolarını görün.",
   "author": {
     "name": "Oğuz K.",
     "email": "kaptanoguz@users.noreply.github.com"
@@ -18,6 +18,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --test lib/__tests__/*.test.ts",
     "electron:dev": "npm run build && electron . --dev",
     "electron:build": "npm run build && electron-builder",
     "dist:linux": "npm run build && electron-builder --linux deb AppImage",
@@ -55,8 +56,8 @@
       ],
       "icon": "public/icon.png",
       "category": "Finance",
-      "synopsis": "Modern Financial Asset Management Platform",
-      "description": "WealthPulse AI - Canlı piyasa verileri, portföy yönetimi, gelir/gider takibi, ekonomi haberleri ve Monte Carlo simülasyonu içeren modern finansal varlık yönetim platformu."
+      "synopsis": "Portfolio tracking and Monte Carlo projections",
+      "description": "WealthPulse AI - TL bazında portföy takibi ve enflasyon düzeltmeli Monte Carlo simülasyonu."
     },
     "deb": {
       "depends": [
