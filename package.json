@@ -1,6 +1,6 @@
 {
   "name": "wealthpulseai",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "WealthPulse AI — Portföy takibi ve Monte Carlo simülasyonu. Hisse, altın, döviz, fon ve kripto varlıklarınızı TL bazında izleyin, enflasyona göre olası gelecek senaryolarını görün.",
   "author": {
     "name": "Oğuz K.",
@@ -19,26 +19,68 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON lib/__tests__/*.test.ts",
-    "electron:dev": "npm run build && electron . --dev",
-    "electron:build": "npm run build && electron-builder",
-    "dist:linux": "npm run build && electron-builder --linux deb AppImage",
-    "dist:all": "npm run build && electron-builder --linux deb AppImage"
+    "electron:dev": "electron . --dev",
+    "dist:linux": "npm run build:desktop && electron-builder --linux --publish never",
+    "build:desktop": "next build && node scripts/prepare-standalone.mjs",
+    "electron:start": "npm run build:desktop && electron .",
+    "dist:win": "npm run build:desktop && electron-builder --win --publish never",
+    "dist:mac": "npm run build:desktop && electron-builder --mac --publish never"
   },
   "build": {
     "appId": "com.wealthpulse.ai",
-    "productName": "WealthPulse AI",
-    "artifactName": "WealthPulseAI-${version}-${arch}.${ext}",
+    "productName": "WealthPulse",
+    "artifactName": "WealthPulse-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist-electron"
     },
     "files": [
       "electron-main.js",
-      ".next/**/*",
-      "public/**/*",
-      "node_modules/**/*",
       "package.json",
-      "next.config.ts"
+      "public/icon.png",
+      "!node_modules/**/*"
     ],
+    "extraResources": [
+      {
+        "from": ".next/standalone",
+        "to": "app-server",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "afterPack": "scripts/after-pack.cjs",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "WealthPulse"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "public/icon.png",
+      "category": "public.app-category.finance"
+    },
     "linux": {
       "target": [
         {
@@ -57,7 +99,7 @@
       "icon": "public/icon.png",
       "category": "Finance",
       "synopsis": "Portfolio tracking and Monte Carlo projections",
-      "description": "WealthPulse AI - TL bazında portföy takibi ve enflasyon düzeltmeli Monte Carlo simülasyonu."
+      "description": "WealthPulse - TL bazında portföy takibi ve enflasyon düzeltmeli Monte Carlo simülasyonu."
     },
     "deb": {
       "depends": [
