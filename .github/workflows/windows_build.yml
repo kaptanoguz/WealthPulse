@@ -1,4 +1,9 @@
-name: Build Windows EXE
+# Builds desktop installers for Windows, macOS and Linux.
+# - Manual run (Actions → "Build desktop installers" → Run workflow): installers
+#   are attached to the run as downloadable artifacts.
+# - Pushing a tag like v1.1.0: the installers are also published as a GitHub Release.
+# (File name kept from the original Windows-only workflow so existing links keep working.)
+name: Build desktop installers
 
 on:
   push:
@@ -11,34 +16,54 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win
+            files: dist-electron/*.exe
+          - os: macos-latest
+            target: mac
+            files: dist-electron/*.dmg
+          - os: ubuntu-latest
+            target: linux
+            files: |
+              dist-electron/*.AppImage
+              dist-electron/*.deb
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
-          
+
       - name: Install dependencies
-        run: npm install
-          
-      - name: Build with Next.js and Electron Builder
-        run: |
-          npm run build
-          npx electron-builder --win --publish never
-          
-      - name: Upload Artifact
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build installer
+        run: npm run dist:${{ matrix.target }}
+        env:
+          # Not code-signed: skip looking for signing certificates.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WealthPulseAI-Windows
-          path: dist-electron/*.exe
+          name: WealthPulse-${{ matrix.target }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
 
-      - name: Upload to Release
+      - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist-electron/*.exe
+          files: ${{ matrix.files }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

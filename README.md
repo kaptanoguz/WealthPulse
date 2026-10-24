@@ -33,7 +33,15 @@ npm install
 npm run dev        # http://localhost:3000
 npm test           # unit tests for the portfolio and Monte Carlo engines
 npm run build
+
+# Desktop app
+npm run electron:start   # build, then open the app in Electron
+npm run dist:win         # or dist:mac / dist:linux: installers in dist-electron/
 ```
+
+Releases are built by GitHub Actions (`.github/workflows/windows_build.yml`) for all three platforms. A manual run attaches the installers as artifacts. Pushing a `v*` tag also publishes them as a release.
+
+The desktop app ships the Next.js standalone server (`output: "standalone"`) and starts it with Electron's own Node runtime on `127.0.0.1:39871`. The port is fixed because browser storage is tied to it.
 
 Core logic is plain TypeScript with no UI dependencies:
 
@@ -54,8 +62,15 @@ Core logic is plain TypeScript with no UI dependencies:
 
 ## Download
 
-- **Windows:** `WealthPulseAI Setup.exe` from Releases
-- **Linux:** `.deb` / `.AppImage`
+Installers are on the [Releases](https://github.com/kaptanoguz/WealthPulseAI/releases) page. They are self-contained: no Node.js or npm is needed on your machine.
+
+| Platform | File | Notes |
+| --- | --- | --- |
+| Windows | `WealthPulse-<version>-win-x64.exe` | The installer is not code-signed. If SmartScreen warns, choose "More info" and then "Run anyway". |
+| macOS (Apple Silicon / Intel) | `WealthPulse-<version>-mac-arm64.dmg` / `-x64.dmg` | Not notarized. The first time, right-click the app and choose "Open". |
+| Linux | `.AppImage` (make it executable and run it) or `.deb` (`sudo apt install ./WealthPulse-….deb`) | |
+
+Your portfolio is stored locally, inside the app's own profile. Use **Ayarlar → Yedeği indir** to keep a backup.
 
 > Not investment advice. Simulation results come from assumptions, not forecasts.
 
