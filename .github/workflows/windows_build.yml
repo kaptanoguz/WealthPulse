@@ -53,6 +53,15 @@ jobs:
           # Not code-signed: skip looking for signing certificates.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
+      - name: Check Linux package
+        if: matrix.target == 'linux'
+        run: |
+          dpkg-deb --info dist-electron/*.deb
+          # Must install on Ubuntu 24.04 / Linux Mint 22, which dropped libappindicator3-1.
+          ! dpkg-deb --field dist-electron/*.deb Depends | grep -q appindicator
+          sudo apt-get install -y ./dist-electron/*.deb
+          test -x /opt/WealthPulse/wealthpulseai
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
