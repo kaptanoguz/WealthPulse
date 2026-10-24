@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    runMonteCarlo, validateParams, quantileSorted, histogram, createRng, createNormal, type MonteCarloParams,
+    runMonteCarlo, validateParams, quantileSorted, histogram, createRng, createNormal, selectInPlace, type MonteCarloParams,
 } from '../montecarlo.ts';
 
 const base: MonteCarloParams = {
@@ -98,4 +98,71 @@ test('normal generator has ~zero mean and unit variance', () => {
     for (let i = 0; i < N; i++) { const z = n(); s += z; s2 += z * z; }
     assert.ok(Math.abs(s / N) < 0.02);
     assert.ok(Math.abs(s2 / N - 1) < 0.03);
+});
+
+test('selectInPlace puts the k-th smallest value at k and partitions around it', () => {
+    const rng = createRng(5);
+    for (const n of [1, 2, 7, 601, 5000]) {
+        // Include plenty of ties: they are the usual trap for partition loops.
+        const src = Float64Array.from({ length: n }, () => Math.floor(rng() * n / 3));
+        const sorted = src.slice().sort();
+        for (const k of [0, Math.floor(n / 2), n - 1]) {
+            const a = src.slice();
+            selectInPlace(a, k);
+            assert.equal(a[k], sorted[k]);
+            for (let i = 0; i < k; i++) assert.ok(a[i] <= a[k]);
+            for (let i = k + 1; i < n; i++) assert.ok(a[i] >= a[k]);
+        }
+    }
+});
+
+// The straightforward path-by-path engine the optimised one replaced. The optimised one must
+// give the same numbers, bit for bit.
+function referenceRun(p: MonteCarloParams) {
+    const months = p.years * 12;
+    const sigma = p.annualVolatility / Math.sqrt(12);
+    const mu = Math.log(1 + p.annualReturn) / 12 - 0.5 * sigma * sigma;
+    const monthlyInflation = Math.pow(1 + p.annualInflation, 1 / 12);
+    const values = Array.from({ length: months + 1 }, () => new Float64Array(p.simulations));
+    const drawdowns = new Float64Array(p.simulations);
+    const normal = createNormal(createRng(p.seed));
+    for (let s = 0; s < p.simulations; s++) {
+        let v = p.initialValue, peak = v, maxDd = 0;
+        values[0][s] = v;
+        for (let m = 1; m <= months; m++) {
+            v = v * Math.exp(mu + sigma * normal()) + p.monthlyContribution;
+            values[m][s] = v;
+            if (v > peak) peak = v;
+            else if (peak > 0) maxDd = Math.max(maxDd, (peak - v) / peak);
+        }
+        drawdowns[s] = maxDd;
+    }
+    const qs = [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95];
+    const row = (m: number, sorted: Float64Array) => {
+        const [p5, p10, p25, p50, p75, p90, p95] = qs.map(q => quantileSorted(sorted, q));
+        return { month: m, p5, p10, p25, p50, p75, p90, p95 };
+    };
+    const nominal = [], real = [];
+    for (let m = 0; m <= months; m++) {
+        const sorted = values[m].slice().sort();
+        const d = Math.pow(monthlyInflation, m);
+        nominal.push(row(m, sorted));
+        real.push(row(m, sorted.map(v => v / d)));
+    }
+    return { finalNominal: values[months], nominal, real, medianMaxDrawdown: quantileSorted(drawdowns.sort(), 0.5) };
+}
+
+test('optimised engine matches the path-by-path reference exactly', () => {
+    for (const p of [
+        base,
+        { ...base, years: 3, annualVolatility: 0, simulations: 101 },
+        { ...base, initialValue: 0, monthlyContribution: 500, years: 7, annualReturn: -0.5, annualVolatility: 2.5, simulations: 777, seed: 9 },
+    ]) {
+        const got = runMonteCarlo(p);
+        const want = referenceRun(p);
+        assert.deepEqual(Array.from(got.finalNominal), Array.from(want.finalNominal));
+        assert.deepEqual(got.nominal, want.nominal);
+        assert.deepEqual(got.real, want.real);
+        assert.equal(got.medianMaxDrawdown, want.medianMaxDrawdown);
+    }
 });

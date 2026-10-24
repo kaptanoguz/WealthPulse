@@ -12,7 +12,8 @@ import {
     AssetType, ASSET_TYPE_LABELS, ClassAssumption, DEFAULT_ASSUMPTIONS, allocationByType, blendAssumptions,
 } from '@/lib/portfolio';
 import { usePortfolio, useStoreReady } from '@/lib/portfolio-store';
-import { MonteCarloParams, MonteCarloResult, runMonteCarlo, validateParams, histogram } from '@/lib/montecarlo';
+import { MonteCarloParams, MonteCarloResult, validateParams, histogram } from '@/lib/montecarlo';
+import { runMonteCarloAsync } from '@/lib/montecarlo-client';
 import { formatCompactTRY, formatShare, formatProbability, formatCurrency0, formatNumber } from '@/lib/format';
 import { PageHeader, Panel, StatStrip, ChartTooltip, axisProps } from '@/components/ui/primitives';
 import { ASSET_COLORS } from '@/components/ui/asset-colors';
@@ -78,14 +79,22 @@ export default function SimulatorPage() {
     const paramsKey = JSON.stringify(params);
     const stale = result !== null && JSON.stringify(result.params) !== paramsKey;
 
+    // Only the latest run may update the page; an older one that finishes later is dropped.
+    const runId = useRef(0);
     const run = (p: MonteCarloParams) => {
         if (validateParams(p).length) return;
+        const id = ++runId.current;
         setRunning(true);
-        // Yield one frame so the button shows its loading state before the synchronous run.
-        setTimeout(() => {
-            setResult(runMonteCarlo(p));
-            setRunning(false);
-        }, 16);
+        runMonteCarloAsync(p)
+            .then(r => {
+                if (id === runId.current) setResult(r);
+            })
+            .catch(() => {
+                // Inputs were validated above, so this is not expected; keep the previous result on screen.
+            })
+            .finally(() => {
+                if (id === runId.current) setRunning(false);
+            });
     };
 
     // Run once automatically when the page opens with a portfolio.
