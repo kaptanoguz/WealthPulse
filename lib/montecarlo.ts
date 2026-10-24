@@ -99,15 +99,22 @@ export function validateParams(p: MonteCarloParams): string[] {
 
 // --- Seeded RNG -------------------------------------------------------------
 
+const MULBERRY_STEP = 0x6d2b79f5;
+
+/** mulberry32 output for an already advanced state; returns [0, 1). */
+function mulberryOut(state: number): number {
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
 /** mulberry32 — small, fast, good enough for simulation; returns [0, 1). */
 export function createRng(seed: number): () => number {
     let a = seed >>> 0;
     return () => {
-        a = (a + 0x6d2b79f5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        a = (a + MULBERRY_STEP) >>> 0;
+        return mulberryOut(a);
     };
 }
 
@@ -142,17 +149,90 @@ export function quantileSorted(sorted: ArrayLike<number>, q: number): number {
     return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
-function percentileRow(month: number, sorted: Float64Array): PercentileRow {
-    return {
-        month,
-        p5: quantileSorted(sorted, 0.05),
-        p10: quantileSorted(sorted, 0.10),
-        p25: quantileSorted(sorted, 0.25),
-        p50: quantileSorted(sorted, 0.50),
-        p75: quantileSorted(sorted, 0.75),
-        p90: quantileSorted(sorted, 0.90),
-        p95: quantileSorted(sorted, 0.95),
+/**
+ * Moves the k-th smallest element of a[lo..hi] to index k, with everything
+ * before it <= a[k] and everything after it >= a[k]. Floyd–Rivest selection
+ * (as in the `quickselect` package): it first narrows the range around k on a
+ * small sample, so a single selection costs about 1.5 n comparisons, against
+ * O(n log n) for a full sort.
+ */
+export function selectInPlace(a: Float64Array, k: number, lo = 0, hi = a.length - 1): void {
+    while (hi > lo) {
+        if (hi - lo > 600) {
+            const n = hi - lo + 1;
+            const m = k - lo + 1;
+            const z = Math.log(n);
+            const s = 0.5 * Math.exp((2 * z) / 3);
+            const sd = 0.5 * Math.sqrt((z * s * (n - s)) / n) * (m - n / 2 < 0 ? -1 : 1);
+            selectInPlace(a, k, Math.max(lo, Math.floor(k - (m * s) / n + sd)), Math.min(hi, Math.floor(k + ((n - m) * s) / n + sd)));
+        }
+        const t = a[k];
+        let i = lo;
+        let j = hi;
+        swap(a, lo, k);
+        if (a[hi] > t) swap(a, lo, hi);
+        while (i < j) {
+            swap(a, i, j);
+            i++;
+            j--;
+            while (a[i] < t) i++;
+            while (a[j] > t) j--;
+        }
+        if (a[lo] === t) swap(a, lo, j);
+        else {
+            j++;
+            swap(a, j, hi);
+        }
+        if (j <= k) lo = j + 1;
+        if (k <= j) hi = j - 1;
+    }
+}
+
+function swap(a: Float64Array, i: number, j: number): void {
+    const t = a[i];
+    a[i] = a[j];
+    a[j] = t;
+}
+
+/**
+ * Places every index in ks (ascending) at its sorted position. Selecting the middle index first
+ * splits the array, so each half only searches its own side.
+ */
+function selectMany(a: Float64Array, ks: number[], kLo: number, kHi: number, lo: number, hi: number): void {
+    if (kLo > kHi) return;
+    const mid = (kLo + kHi) >>> 1;
+    const k = ks[mid];
+    selectInPlace(a, k, lo, hi);
+    selectMany(a, ks, kLo, mid - 1, lo, k - 1);
+    selectMany(a, ks, mid + 1, kHi, k + 1, hi);
+}
+
+const BANDS = [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95] as const;
+
+/**
+ * Nominal and real percentile rows for one month. Only the order statistics
+ * the bands interpolate between are selected, so the array is never fully
+ * sorted; the numbers are identical to quantileSorted on a sorted copy.
+ * Reorders `values` in place.
+ */
+function percentileRows(month: number, values: Float64Array, deflator: number): [PercentileRow, PercentileRow] {
+    const n = values.length;
+    const positions = BANDS.map(q => (n - 1) * q);
+    const needed = [...new Set(positions.flatMap(pos => [Math.floor(pos), Math.ceil(pos)]))].sort((a, b) => a - b);
+    selectMany(values, needed, 0, needed.length - 1, 0, n - 1);
+    const band = (pos: number, scale: number) => {
+        const lo = Math.floor(pos);
+        const hi = Math.ceil(pos);
+        const a = values[lo] / scale;
+        const b = values[hi] / scale;
+        return a + (b - a) * (pos - lo);
     };
+    const row = (scale: number): PercentileRow => {
+        const [p5, p10, p25, p50, p75, p90, p95] = positions.map(pos => band(pos, scale));
+        return { month, p5, p10, p25, p50, p75, p90, p95 };
+    };
+    // Dividing by 1 is exact, so the nominal row matches the undeflated values bit for bit.
+    return [row(1), row(deflator)];
 }
 
 function mean(values: ArrayLike<number>): number {
@@ -184,37 +264,63 @@ export function runMonteCarlo(params: MonteCarloParams): MonteCarloResult {
     const deflator = new Float64Array(months + 1);
     for (let m = 0; m <= months; m++) deflator[m] = Math.pow(monthlyInflation, m);
 
-    // values[m][s]: month-major so each month can be sorted independently.
-    const values: Float64Array[] = Array.from({ length: months + 1 }, () => new Float64Array(simulations));
+    // The simulation walks month by month across all paths, keeping one cross-section of
+    // balances in memory instead of a (months + 1) x simulations table (96 MB at 50 years and
+    // 20 000 paths). Every path still reads its own stretch of the mulberry32 stream: path s
+    // uses draws s*months .. (s+1)*months - 1, which is where a path-by-path run would have
+    // read them (months = years * 12 is even, so Box–Muller pairs never straddle two paths).
+    // mulberry32's state after i draws is just seed + i * 0x6d2b79f5, so each path's start
+    // state is computed directly.
+    const rngState = new Uint32Array(simulations);
+    for (let s = 0; s < simulations; s++) rngState[s] = (seed >>> 0) + Math.imul(s * months, MULBERRY_STEP);
+    const spare = new Float64Array(simulations);
+    const balance = new Float64Array(simulations).fill(initialValue);
+    const peak = new Float64Array(simulations).fill(initialValue);
     const maxDrawdowns = new Float64Array(simulations);
-
-    const normal = createNormal(createRng(seed));
-
-    for (let s = 0; s < simulations; s++) {
-        let v = initialValue;
-        let peak = v;
-        let maxDd = 0;
-        values[0][s] = v;
-        for (let m = 1; m <= months; m++) {
-            v = v * Math.exp(mu + sigma * normal()) + monthlyContribution;
-            values[m][s] = v;
-            // Drawdown of the account balance (contributions included), as the user would see it.
-            if (v > peak) peak = v;
-            else if (peak > 0) maxDd = Math.max(maxDd, (peak - v) / peak);
-        }
-        maxDrawdowns[s] = maxDd;
-    }
-
-    const finalNominal = Float64Array.from(values[months]);
-    const finalReal = finalNominal.map(v => v / deflator[months]);
+    const scratch = new Float64Array(simulations);
 
     const nominal: PercentileRow[] = [];
     const real: PercentileRow[] = [];
-    for (let m = 0; m <= months; m++) {
-        const sorted = values[m].slice().sort();
-        nominal.push(percentileRow(m, sorted));
-        real.push(percentileRow(m, sorted.map(v => v / deflator[m])));
+    const addRows = (m: number) => {
+        scratch.set(balance);
+        const [nom, re] = percentileRows(m, scratch, deflator[m]);
+        nominal.push(nom);
+        real.push(re);
+    };
+    addRows(0);
+
+    for (let m = 1; m <= months; m++) {
+        const fresh = m % 2 === 1;
+        for (let s = 0; s < simulations; s++) {
+            let z: number;
+            if (fresh) {
+                // Inlined createNormal(createRng(...)): same arithmetic, so the same variates.
+                let a = rngState[s];
+                let u = 0;
+                while (u === 0) {
+                    a = (a + MULBERRY_STEP) >>> 0;
+                    u = mulberryOut(a);
+                }
+                a = (a + MULBERRY_STEP) >>> 0;
+                const w = mulberryOut(a);
+                rngState[s] = a;
+                const r = Math.sqrt(-2 * Math.log(u));
+                spare[s] = r * Math.sin(2 * Math.PI * w);
+                z = r * Math.cos(2 * Math.PI * w);
+            } else {
+                z = spare[s];
+            }
+            const v = balance[s] * Math.exp(mu + sigma * z) + monthlyContribution;
+            balance[s] = v;
+            // Drawdown of the account balance (contributions included), as the user would see it.
+            if (v > peak[s]) peak[s] = v;
+            else if (peak[s] > 0) maxDrawdowns[s] = Math.max(maxDrawdowns[s], (peak[s] - v) / peak[s]);
+        }
+        addRows(m);
     }
+
+    const finalNominal = balance;
+    const finalReal = finalNominal.map(v => v / deflator[months]);
 
     let totalInvestedReal = initialValue;
     for (let m = 1; m <= months; m++) totalInvestedReal += monthlyContribution / deflator[m];
