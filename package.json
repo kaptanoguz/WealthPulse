@@ -8,10 +8,10 @@
   },
   "license": "MIT",
   "main": "electron-main.js",
-  "homepage": "https://github.com/kaptanoguz/WealthPulseAI",
+  "homepage": "https://github.com/kaptanoguz/WealthPulse",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kaptanoguz/WealthPulseAI.git"
+    "url": "https://github.com/kaptanoguz/WealthPulse.git"
   },
   "scripts": {
     "dev": "next dev",

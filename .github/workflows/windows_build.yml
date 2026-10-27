@@ -65,5 +65,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ matrix.files }}
+          # Release notes are generated from the merged pull requests since the previous tag.
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
