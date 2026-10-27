@@ -100,13 +100,6 @@
       "category": "Finance",
       "synopsis": "Portfolio tracking and Monte Carlo projections",
       "description": "WealthPulse - TL bazında portföy takibi ve enflasyon düzeltmeli Monte Carlo simülasyonu."
-    },
-    "deb": {
-      "depends": [
-        "libnotify4",
-        "libappindicator3-1",
-        "libsecret-1-0"
-      ]
     }
   },
   "dependencies": {
